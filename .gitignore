@@ -1,0 +1,18 @@
+# Ignore pycache
+*__pycache__/
+
+# Ignore all ._ files
+._*
+
+# Ignoring DS_Store
+.DS_Store
+._.DS_Store
+
+# Ignoring Raw Data (for Test)
+data/*
+Moba500/*
+tests/*
+
+# Ignore virtual environment
+.venv/*
+

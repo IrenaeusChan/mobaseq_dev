@@ -1,0 +1,36 @@
+Metadata-Version: 2.2
+Name: mobaseq
+Version: 0.0.1
+Summary: Python toolkit for running analysis workflow for MOBA-seq assay
+Home-page: https://github.com/tanglab-2024/MOBAseq-Toolkit
+Author: Irenaeus Chan
+Author-email: chani@wustl.edu
+Project-URL: Bug Tracker, https://github.com/tanglab-2024/MOBAseq-Toolkit/issues
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: ISC License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.7
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: click==8.0.3
+Requires-Dist: clint==0.5.1
+Requires-Dist: pandas==2.0.0
+Requires-Dist: pysam==0.21.0
+Requires-Dist: scipy==1.12.0
+Requires-Dist: numba==0.59.0
+
+# MOBAseq
+
+## Installation
+
+```bash
+pip install git+https://github.com/RuiTang-2024/MOBASeq-Toolkit.git@main
+```
+
+OR
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip3 install -e .
+```
