@@ -1,2 +1,0 @@
-[console_scripts]
-mobaseq = mobaseq.cli:cli

@@ -22,7 +22,16 @@ def cli():
 @cli.group('process', short_help="Set of tools to perform basic read processing for MOBAseq.")
 def process():
     """
-    Suite of processing tools available for use to process MOBAseq data.
+    Suite of processing tools available for use to process MOBAseq data.\n\r
+    \n\r
+    The MOBAseq processing pipeline is a set of tools that can be used to process MOBAseq data. The pipeline is designed to be modular, allowing users to run individual tools or the entire pipeline. The pipeline is designed to be run in the following order:\n\r
+    1. mobaseq process count-reads\n\r
+    2. mobaseq process clean-barcodes\n\r
+    3. mobaseq process cell-number\n\r
+    4. mobaseq process sgID-qc\n\r
+    5. mobaseq process mapped-reads\n\r
+    \n\r
+    Each tool has its own set of options that can be used to customize the output. Please run 'mobaseq process --help' to see all available options for each command.
     """
     signal.signal(signal.SIGPIPE, signal.SIG_DFL)
 
@@ -65,7 +74,7 @@ def clean_barcodes(merge_reads_csv, input_dir, out_dir, threads, debug):
     
 @process.command('cell-number', short_help="Estimate cell number from raw count files.")
 @click.option('--barcode_clean_txt', '-b', type=click.Path(exists=True), required=False, help="Individual _BarcodeClean.txt file")
-@click.option('--input_dir', '-i', type=click.Path(exists=True), required=False, help="Input directory containing all processed CountRead files (_MergeReadOut.csv)")
+@click.option('--input_dir', '-i', type=click.Path(exists=True), required=False, help="Input directory containing all processed BarcodeClean files (_BarcodeClean.txt)")
 @click.option('--spike_ins', '-s', type=click.Path(exists=True), required=True, help="Spike-in Information Sheet")
 @click.option('--library_info', '-l', type=click.Path(exists=True), required=True, help="Counts of spike-ins")
 @click.option('--out_dir', '-o', type=click.Path(), required=True, help="Output directory to place estimated cell numbers")
