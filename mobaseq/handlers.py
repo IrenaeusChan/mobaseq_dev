@@ -2,9 +2,11 @@ import os, sys
 import multiprocessing as mp
 import pandas as pd
 import numpy as np
+import traceback
 import mobaseq.process.tools as tools
 import mobaseq.process.rawdata as rawdata
 import mobaseq.qc.summarize as summarize
+import mobaseq.qc.plot as plotting
 import mobaseq.utils.logger as log
 
 def countreads_single(read_one, read_two, sample_name, sgid_file, out_dir, debug):
@@ -38,12 +40,74 @@ def clean_barcodes_batch(input_dir, out_dir, threads, debug):
     # therefore, to avoid overloading the system, we will use half the threads for each of the samples
     with mp.Pool(threads) as p:
         success = p.starmap(rawdata.clean_barcodes, [
-            (merge_read_csv[0], merge_read_csv[1], 1, out_dir, debug) for merge_read_csv in merge_reads_csv_files
+            (merge_read_csv, sample_name, 1, out_dir, debug) for merge_read_csv, sample_name in merge_reads_csv_files
         ])
     if not all(success):
         err_msg = f"ERROR: Some processes failed. Check the logs for more details. Exiting."
         log.logit(err_msg, color="red")
         sys.exit(f"[err] {err_msg}")
+
+def cell_number_single(barcode_clean_txt, spike_ins, library_info, out_dir, plot, debug):
+    sample_name = tools.get_sample_name(barcode_clean_txt, "barcode_clean_txt", debug)
+    spike_ins = tools.process_spike_ins(spike_ins, debug)
+    library_info = pd.read_excel(library_info)
+    rawdata.cell_number(barcode_clean_txt, sample_name, spike_ins, library_info, out_dir, plot, debug)
+
+def cell_number_batch(input_dir, spike_ins, library_info, out_dir, threads, plot, debug):
+    barcode_clean_txt_files = tools.get_list_of_files(input_dir, "barcode_clean_txt", debug)
+    spike_ins = tools.process_spike_ins(spike_ins, debug)
+    library_info = pd.read_excel(library_info)
+    
+    with mp.Pool(threads) as p:
+        results = p.starmap(rawdata.cell_number, [
+            (barcode_clean_txt, sample_name, spike_ins, library_info, out_dir, plot, debug)
+            for barcode_clean_txt, sample_name in barcode_clean_txt_files
+        ])
+    success = [res[0] for res in results]
+    dfs = [res[1] for res in results]
+    filtered_dfs = [res[2] for res in results]
+    spike_counts_dfs = [res[3] for res in results]
+    if not all(success):
+        err_msg = f"ERROR: Some processes failed. Check the logs for more details. Exiting."
+        log.logit(err_msg, color="red")
+        sys.exit(f"[err] {err_msg}")
+    else:
+        log.logit(f"Cell Number Calculations Complete. Combining results...", color="green")
+        # Initialize empty DataFrames for combined results using the first result
+        combined_df = pd.concat(dfs, ignore_index=True)
+        combined_filtered_df = pd.concat(filtered_dfs, ignore_index=True)
+        combined_spike_counts = pd.concat(spike_counts_dfs, ignore_index=True)
+        
+        # Get the unique Sample_ID and Spike_Rsq values from combined_df
+        unique_samples = combined_df['Sample_Rsq'].unique()
+        split_samples = [x.split('_') for x in unique_samples]
+        Rsq = pd.DataFrame(split_samples, columns=['Sample_ID', 'Spike_Rsq'])
+        Rsq['Spike_Rsq'] = pd.to_numeric(Rsq['Spike_Rsq'])
+        if debug: print(Rsq)
+        if plot: plotting.rsq_per_sample(Rsq, out_dir)
+        
+        # Select columns and get unique combinations
+        unique_df = combined_df[['reading_depth', 'Sample_ID']].drop_duplicates().reset_index(drop=True)
+        if debug: print(unique_df)
+        if plot: plotting.reading_depth_per_sample(unique_df, out_dir)
+        
+        aggr_df = (combined_df.groupby('Sample_ID')
+           .agg({'reading_depth': 'mean', 'Spike_Rsq': 'mean'})
+           .rename(columns={'reading_depth': 'mean_ReadingDepth', 
+                          'Spike_Rsq': 'mean_Rsq'})
+           .reset_index())
+        aggr_df['cellsPerRead'] = 1/aggr_df['mean_ReadingDepth']
+        if plot: plotting.mean_rsq_distribution(aggr_df, out_dir)
+        if plot: plotting.mean_reading_depth_distribution(aggr_df, out_dir)
+        
+        log.logit(f"Results written to {out_dir}/combined_results/")
+        out_dir = tools.ensure_abs_path(out_dir + "/combined_results/")
+        Rsq.to_csv(f"{out_dir}/RsqPerSample.csv", index=False)
+        unique_df.to_csv(f"{out_dir}/ReadingDepthPerSample.csv", index=False)
+        aggr_df.to_csv(f"{out_dir}/CountInfoPerSample.csv", index=False)
+        combined_df.to_csv(f"{out_dir}/UnfilteredSampleInfo.csv", index=False)
+        combined_filtered_df.to_csv(f"{out_dir}/FilteredSampleInfo.csv", index=False)
+        combined_spike_counts.to_csv(f"{out_dir}/SpikeInInfo.csv", index=False)
 
 def sgID_qc_single(merge_reads_csv, sgid_file, out_dir, debug):
     sgID_dict = tools.process_sgid_file(sgid_file, debug)
@@ -75,7 +139,7 @@ def sgID_qc_batch(input_dir, sgid_file, out_dir, threads, debug):
         combined_rel_barcodes = results[0][0]['sgID']
 
         # Merge each result DataFrame into the combined DataFrames
-        for i, res in enumerate(results):
+        for res in results:
             df, sample_name = res[0], res[1]
             combined_total_reads = pd.merge(combined_total_reads, df[['sgID', 'total_reads']].rename(columns={'total_reads': f'{sample_name}'}), on='sgID', how='outer').fillna(0)
             combined_num_barcodes = pd.merge(combined_num_barcodes, df[['sgID', 'num_barcodes']].rename(columns={'num_barcodes': f'{sample_name}'}), on='sgID', how='outer').fillna(0)
@@ -140,3 +204,137 @@ def mapped_reads_batch(input_dir, sgid_file, out_dir, threads, debug):
     df.to_csv(f"{out_dir}/mapped_percentages.csv", index=False)
     log.logit(f"Results written to {out_dir}/mapped_percentages.csv")
     return df, mapped_percentages, unmapped_percentages
+
+def plot_spike_ins(spike_count, out_dir, debug):
+    log.logit(f"Plotting spike-in counts vs. expected cell numbers", color="green")
+    out_dir = tools.ensure_abs_path(out_dir)
+    sample_name = tools.get_sample_name(spike_count, "spike_count", debug)
+    spike_count = pd.read_csv(spike_count, sep="\t")
+    spike_count, slope, rsq = rawdata.get_slope_and_rsq(spike_count)
+    plotting.spike_ins(spike_count, slope, rsq, "black", sample_name, str(out_dir))
+
+def plot_rsq_per_sample(rsq, out_dir, debug):
+    out_dir = tools.ensure_abs_path(out_dir)
+    rsq = pd.read_csv(rsq)
+    plotting.rsq_per_sample(rsq, str(out_dir))
+
+def plot_read_depth_per_sample(reading_depth, out_dir, debug):
+    out_dir = tools.ensure_abs_path(out_dir)
+    reading_depth = pd.read_csv(reading_depth)
+    plotting.reading_depth_per_sample(reading_depth, str(out_dir))
+
+def plot_mean_read_depth_distribution(aggr_df, out_dir, debug):
+    out_dir = tools.ensure_abs_path(out_dir)
+    aggr_df = pd.read_csv(aggr_df)
+    plotting.mean_reading_depth_distribution(aggr_df, str(out_dir))
+
+def plot_mean_rsq_distribution(aggr_df, out_dir, debug):
+    out_dir = tools.ensure_abs_path(out_dir)
+    aggr_df = pd.read_csv(aggr_df)
+    plotting.mean_rsq_distribution(aggr_df, str(out_dir))
+
+def check_sgid_files(sgID_csv_dir):
+    required_files = [
+        'total_reads_per_sgid.csv',
+        'barcodes_per_sgid.csv',
+        'relative_reads_per_sgid.csv',
+        'relative_barcodes_per_sgid.csv'
+    ]
+    
+    missing_files = []
+    for file in required_files:
+        file_path = os.path.join(sgID_csv_dir, file)
+        if not os.path.exists(file_path):
+            missing_files.append(file)
+    
+    if missing_files:
+        raise FileNotFoundError(
+            f"Missing required files in {sgID_csv_dir}: {', '.join(missing_files)}"
+        )
+    
+    log.logit(f"All required sgID files found in {sgID_csv_dir}")
+    return True
+
+def process_dataframe(df, rows_to_exclude=None):
+    """Helper function to process each DataFrame"""
+    df = df.rename(columns={'preTran1': 'pretransplantation'})
+    if rows_to_exclude:
+        df = df[~df['sgID'].isin(rows_to_exclude)]
+    return df
+
+def calculate_relative_values(df, total_per_sample):
+    """Calculate relative values for reads/barcodes"""
+    sgid_col = df['sgID']
+    relative_df = df.iloc[:, 1:].div(total_per_sample[1:], axis=1)
+    relative_df.insert(0, 'sgID', sgid_col)
+    return relative_df
+
+def plot_per_sgid(sgID_csv_dir, out_dir, no_dummy, debug):
+    log.logit(f"Starting to process sgID data...", color = "green")
+    out_dir = tools.ensure_abs_path(out_dir)
+    try:
+        log.logit(f"Looking for the four CSV files in {sgID_csv_dir}...")
+        check_sgid_files(sgID_csv_dir)
+        log.logit(f"Reading in CSV Files...")
+        dataframes = {}
+        for file_type in ['total_reads', 'barcodes', 'relative_reads', 'relative_barcodes']:
+            filename = f'{file_type}_per_sgid.csv'
+            dataframes[file_type] = pd.read_csv(os.path.join(sgID_csv_dir, filename))
+
+        # Process all DataFrames
+        rows_to_exclude = ['sgDummy', 'SpikeIn'] if no_dummy else None
+        for key in dataframes:
+            dataframes[key] = process_dataframe(dataframes[key], rows_to_exclude)
+        
+        if no_dummy:
+            log.logit(f"Recalculating relative reads and barcodes after filtering out sgDummy...")
+            # Pre-filter out rows with sgID == 'sgDummy'
+            total_reads = dataframes['total_reads'].sum(axis=0)
+            total_barcodes = dataframes['barcodes'].sum(axis=0)
+
+            dataframes['relative_reads'] = calculate_relative_values(dataframes['total_reads'], total_reads)
+            dataframes['relative_barcodes'] = calculate_relative_values(dataframes['barcodes'], total_barcodes)
+
+
+        # At the moment, this cut-off is an arbitrary cut-off... need to think of a better method
+        log.logit(f"Determining the most significant sgIDs per sample...")
+        threshold = 0.1 if no_dummy else 0.02
+        sig_entries = []
+        for df_type in ['relative_reads', 'relative_barcodes']:
+            sig_entries.extend(filter_significant_entries(dataframes[df_type], threshold))
+
+        # Save results
+        sig_df = pd.DataFrame(sig_entries)
+        suffix = '_noDummy' if no_dummy else ''
+        csv_filename = os.path.join(out_dir, f'significant_relative_values_filtered{suffix}.csv')
+        log.logit(f"Writing the most significant sgIDs to {csv_filename}")
+        sig_df.to_csv(csv_filename, index=False)
+    
+        # Plot results
+        plotting.per_sgid(
+            dataframes['total_reads'],
+            dataframes['barcodes'],
+            dataframes['relative_reads'],
+            dataframes['relative_barcodes'],
+            out_dir, no_dummy, debug
+        )
+    except Exception as e:
+        log.logit(f"Error processing sgID data: {str(e)}", color="red")
+        if debug: log.logit(traceback.format_exc())
+        raise
+
+def filter_significant_entries(df, value_threshold):
+    significant_entries = []
+    # Skip first column by using iloc[:, 1:]
+    data_cols = df.iloc[:, 1:]
+    
+    for sgID in df['sgID']:
+        for sample in data_cols.columns:
+            value = data_cols.loc[df['sgID'] == sgID, sample].iloc[0]
+            if value > value_threshold:
+                significant_entries.append({
+                    'Sample': sample, 
+                    'sgID': sgID, 
+                    'Value': value
+                })
+    return significant_entries

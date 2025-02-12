@@ -4,9 +4,11 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 import multiprocessing as mp
+from sklearn.linear_model import LinearRegression
 import traceback
 import mobaseq.utils.logger as log
 import mobaseq.process.tools as tools
+import mobaseq.qc.plot as plotting
 
 def vectorized_hamming_distance(s1_array, s2_array):
     """Calculate the Hamming distance between arrays of sequences."""
@@ -22,7 +24,7 @@ def get_closest_gene_vectorized(sgID_array, query_array):
     min_distances = distances[np.arange(len(query_array)), min_indices] # Get the minimum distance
 
     # Only keep the genes where Hamming Distance is <= 1
-    closest_keys = np.where(min_distances <= 1, sgID_array['gene'][min_indices], query_array['sgID']) # Similar to R ifelse
+    closest_keys = np.where(min_distances <= 1, sgID_array['sgID'][min_indices], query_array['sgID']) # Similar to R ifelse
     min_distances = np.where(min_distances <= 1, min_distances, 'NA')
     
     return closest_keys, min_distances
@@ -151,7 +153,7 @@ def countreads_test(read_one, read_two, sample_name, sgIDs, min_length, max_leng
     sgID_barcodes_split = [(split_key(key)[0], split_key(key)[1], value) for key, value in sgID_barcodes_list]
     sgID_barcodes_array = np.array(sgID_barcodes_split, dtype=[('sgID', 'U50'), ('barcode', 'U50'), ('total', 'i4')])
     # Convert the sgIDs dictionary to a numpy array of tuples
-    sgID_array = np.array(list(sgIDs.items()), dtype=[('gene', 'U50'), ('sgRNA_seq', 'U50')])
+    sgID_array = np.array(list(sgIDs.items()), dtype=[('sgID', 'U50'), ('sgRNA_seq', 'U50')])
     # Get the closest gene for each sgID in the sgID_barcodes_array
     log.logit(f"Matching sgIDs to genes...")
     gene, distance = get_closest_gene_vectorized(sgID_array, sgID_barcodes_array)
@@ -232,7 +234,7 @@ def countreads(read_one, read_two, sample_name, sgIDs, min_length, max_length, a
         sgID_barcodes_split = [(split_key(key)[0], split_key(key)[1], value) for key, value in sgID_barcodes_list]
         sgID_barcodes_array = np.array(sgID_barcodes_split, dtype=[('sgID', 'U50'), ('barcode', 'U50'), ('total', 'i4')])
         # Convert the sgIDs dictionary to a numpy array of tuples
-        sgID_array = np.array(list(sgIDs.items()), dtype=[('gene', 'U50'), ('sgRNA_seq', 'U50')])
+        sgID_array = np.array(list(sgIDs.items()), dtype=[('sgID', 'U50'), ('sgRNA_seq', 'U50')])
         # Get the closest gene for each sgID in the sgID_barcodes_array
         log.logit(f"Matching sgIDs to genes...")
         gene, distance = get_closest_gene_vectorized(sgID_array, sgID_barcodes_array)
@@ -272,16 +274,7 @@ def remove_spurious_barcodes(sgid_df):
     distances = barcodes[:, None, :] != barcodes[None, :, :]            # Shape will be (n_barcodes, n_barcodes, barcode_length)
     hamming_distances = np.sum(distances, axis=2)                       # Sum differences along last axis to get Hamming distances
     mask = np.triu(np.ones_like(hamming_distances, dtype=bool), k=1)    # Create mask for upper triangle (we only need to compare each pair once)
-    # Get indices where distance <= 2 (similar barcodes)
-    similar_pairs = np.where((hamming_distances <= 2) & mask)
-    # Report the hamming distances for a specific barcode
-    #hamming_distances_df = pd.DataFrame(hamming_distances, index=sgid_df['barcode'], columns=sgid_df['barcode'])
-    # Find the barcodes with less than 2 differences for the barcode CATGTGACGAAGATTCT
-    #hamming_distances_df = hamming_distances_df.loc['CATGTGACGAAGATTCT']
-    #hamming_distances_df = hamming_distances_df[hamming_distances_df <= 2]
-    #print(hamming_distances_df)
-    #hamming_distances_df.to_csv("hamming_distances.txt", sep='\t')
-
+    similar_pairs = np.where((hamming_distances <= 1) & mask)           # Get indices where distance <= 2 (similar barcodes)
     # Initialize result array
     bool_all = np.ones(len(sgid_df), dtype=bool)
     
@@ -293,14 +286,8 @@ def remove_spurious_barcodes(sgid_df):
         if sgid_df.iloc[i]['count'] < 5:
             continue
         # However, for all other barcodes, we remove the one with the lower count
-        # and since this is organized by count_size, i SHOULD always be greater than j
-        # exception is when i == j, which is the same barcode
-        #if sgid_df.iloc[i]['count'] >= sgid_df.iloc[j]['count']:
-        #    bool_all[j] = False
-        #elif sgid_df.iloc[i]['count'] < sgid_df.iloc[j]['count']:
-        #    bool_all[i] = False
-        #elif sgid_df.iloc[i]['count'] == sgid_df.iloc[j]['count']:
-        #    bool_all[j] = True
+        # and since this is organized by count_size, [i] SHOULD always be greater than [j]
+        # exception is when i == j, which is the same barcode, then it's a 50/50 toss up...
         bool_all[j] = False
     
     # Return a new DataFrame with the filtered barcodes
@@ -317,12 +304,11 @@ def clean_barcodes(merge_reads_csv, sample_name, threads, out_dir, debug):
         log.logit(f"Starting to clean barcodes from {os.path.basename(merge_reads_csv)}...")
         # Remove barcodes where the count is less than 2
         df = df[df['count'] >= 2]
-        #df_ = df[df['gene'] == "AGAGAAGCTCGAGCGTCTCT"]
         if threads == 1:
-            clean_df = df.groupby('gene').apply(remove_spurious_barcodes)
+            clean_df = df.groupby('sgID').apply(remove_spurious_barcodes)
         else:
             with mp.Pool(threads) as p:
-                results = p.starmap(remove_spurious_barcodes, [(group,) for _, group in df.groupby('gene')])
+                results = p.starmap(remove_spurious_barcodes, [(group,) for _, group in df.groupby('sgID')])
             clean_df = pd.concat(results, ignore_index=True)
         log.logit(f"Finished cleaning barcodes from {os.path.basename(merge_reads_csv)}.")
         log.logit(f"Writing output to {out_dir}/{sample_name}_BarcodeClean.txt.")
@@ -332,3 +318,129 @@ def clean_barcodes(merge_reads_csv, sample_name, threads, out_dir, debug):
         log.logit(f"Error occurred while processing {sample_name}: {str(e)}", color="red")
         if debug: log.logit(traceback.format_exc())
         return False
+    
+def cell_num_metrics(df, spike_ins):
+    df.loc[(df['sgID'] == 'sgDummy') & (df['barcode'].isin(spike_ins['sequence'])), 'sgID'] += '_spike'
+    df['BC_end'] = df['barcode'].str[-4:]
+    df['fullBC'] = df['sgID'] + '_' + df['BC_end']
+    df['log2_cell_num'] = np.log2(df['cell_num'])
+    df['rel_cell_num'] = df.groupby('Sample_ID')['cell_num'].transform(lambda x: x / x.sum())
+    return df
+    
+def get_slope_and_rsq(spike_count):
+    log.logit(f"Calculating the slope and R² value for the spike-ins...")
+    # Prepare data
+    X = spike_count[['count']].values
+    y = spike_count['expected_cellnum'].values
+
+    # Fit regression without intercept
+    reg = LinearRegression(fit_intercept=False).fit(X, y)
+
+    # Get coefficient (slope)
+    slope = reg.coef_[0]
+
+    # Calculate R²
+    y_pred = reg.predict(X)
+    # https://github.com/scikit-learn/scikit-learn/discussions/21050
+    # https://stats.stackexchange.com/questions/26176/removal-of-statistically-significant-intercept-term-increases-r2-in-linear-mo/26205#26205
+    # 1 - (((y - y_pred) ** 2).sum() / ((y - np.mean(y)) ** 2).sum())
+    rsq = 1 - (np.sum((y - y_pred) ** 2) / np.sum((y - np.mean(y)) ** 2))
+    # 1 - (((y - y_pred) ** 2).sum() / (y ** 2).sum())
+    rsq = 1 - (np.sum((y - y_pred) ** 2) / np.sum(y ** 2))
+
+    # NOTE: My opinion is to NOT use the correlation of coefficient of determination (R²) as the metric for goodness of fit
+    # This is because we assume no intercept, which means that the R² value will be deflated as it is not the best fit, but the best fit with no intercept
+
+    # Calculate residuals
+    residuals = y - y_pred
+    
+    # Calculate z-scores
+    z_scores = (residuals - np.mean(residuals)) / np.std(residuals)
+    
+    # Add to DataFrame
+    spike_count = spike_count.copy()
+    # Use .loc to set values
+    spike_count.loc[:, 'residuals'] = residuals
+    spike_count.loc[:, 'z_scores'] = z_scores
+
+    return spike_count, slope, rsq
+
+def cell_number(barcode_clean_txt, sample_name, spike_ins, library_info, out_dir, plot, debug):
+    try:
+        log.logit(f"Starting to get cell numbers from: {sample_name}.", color="green")
+        log.logit(f"Opening {os.path.basename(barcode_clean_txt)}...")
+        df = pd.read_csv(barcode_clean_txt, sep='\t')
+        spike_data = df[df['sgID'] == 'sgDummy']
+        log.logit(f"Finished reading {os.path.basename(barcode_clean_txt)}.")
+        log.logit(f"Starting to calculate cell numbers from {os.path.basename(barcode_clean_txt)}...")
+        # Getting the spike-in information by merging the spike_ins and barcode_clean_txt DataFrames 
+        log.logit(f"Determining the raw counts of spike-ins...")
+        spike_count = pd.merge(
+            spike_data,
+            spike_ins[['sequence', 'expected', 'name']],
+            left_on='barcode',
+            right_on='sequence'
+        )
+        if len(spike_count) == 0: raise ValueError(f"No spike-ins found for sample {sample_name}")
+        spike_num = library_info[library_info['Sample'] == sample_name]['Spike_Num'].iloc[0]
+        log.logit(f"Calculating the expected cell numbers based on the spike-ins having a starting value of {spike_num}...")
+        spike_count = spike_count.assign(
+            Sample_ID=sample_name,
+            expected_cellnum=lambda x: x['expected'] * spike_num
+        )
+        if len(spike_count) > 1: # If there is more than one spike-in, calculate the slope and R² value
+            spike_count, slope, rsq = get_slope_and_rsq(spike_count)
+            if debug: 
+                log.logit(f"SciKit-Learn Linear Regression Model: {slope}, {rsq}")
+                print(spike_count[['Sample_ID', 'count', 'name', 'expected_cellnum', 'z_scores']])
+            if plot: plotting.spike_ins(spike_count, slope, rsq, "red" if rsq < 0.9 else "black", sample_name, out_dir)
+            # If the R² value is less than 0.9, remove the Spike-in with the highest z-score
+            if rsq < 0.9:
+                log.logit(f"The R² value is {rsq}, trying to remove the Spike-in with the highest z-score...")
+                max_abs_zscore = np.abs(spike_count['z_scores']).max()
+                spike_count_redo = spike_count[np.abs(spike_count['z_scores']) != max_abs_zscore]
+                spike_count_redo, slope_redo, rsq_redo = get_slope_and_rsq(spike_count_redo)
+                if debug: 
+                    log.logit(f"SciKit-Learn Linear Regression Model: {slope_redo}, {rsq_redo}")
+                    print(spike_count_redo[['Sample_ID', 'count', 'name', 'expected_cellnum', 'z_scores']])
+                if plot: plotting.spike_ins(spike_count_redo, slope_redo, rsq_redo, "red" if rsq < 0.9 else "black", sample_name, out_dir, True)
+                if rsq_redo > rsq:
+                    spike_count = spike_count_redo
+                    slope = slope_redo
+                    rsq = rsq_redo
+            spike_count.to_csv(out_dir + "/" + sample_name + "_SpikeInCounts.txt", index=False, sep='\t', na_rep = 'NA')
+            log.logit(f"The highest R² value is {rsq}.")
+        else: # Calculate slope directly from the ratio when only one point is available
+            slope = float(spike_count['expected_cellnum'].values / spike_count['count'].values)
+        log.logit(f"Using the slope of {slope} to calculate the cell numbers.")
+        df = df.assign(
+            cell_num=lambda x: x['count'] * slope,
+            reading_depth=1/slope
+        )
+        log.logit(f"Finished calculating cell numbers from {os.path.basename(barcode_clean_txt)}.")
+        # Add additional information to the DataFrame
+        df = df.assign(
+            Sample_ID = sample_name,
+            Tissue = library_info[library_info['Sample'] == sample_name]['Tissue'].iloc[0],
+            Time_Point = library_info[library_info['Sample'] == sample_name]['Time_Point'].iloc[0],
+            Mouse_ID = library_info[library_info['Sample'] == sample_name]['Mouse_ID'].iloc[0],
+            Mouse_Genotype = library_info[library_info['Sample'] == sample_name]['Mouse_Genotype'].iloc[0],
+            Sex = library_info[library_info['Sample'] == sample_name]['Sex'].iloc[0],
+            Cell_Lib = library_info[library_info['Sample'] == sample_name]['Cell_Library'].iloc[0],
+            Body_Weight_Trans = library_info[library_info['Sample'] == sample_name]['BW_Trans'].iloc[0],
+            Body_Weight_Coll = library_info[library_info['Sample'] == sample_name]['BW_Coll'].iloc[0],
+            Tissue_Weight = library_info[library_info['Sample'] == sample_name]['Tissue_Weight'].iloc[0],
+            Spike_Num = spike_num,
+            Spike_Rsq = rsq if len(spike_count) > 1 else 0
+        )
+        df['Sample_Rsq'] = df['Sample_ID'] + "_" + df['Spike_Rsq'].astype(str)
+        df = cell_num_metrics(df, spike_ins)
+        df.to_csv(out_dir + "/" + sample_name + "_UnfilteredSampleInfo.txt", index=False, sep='\t', na_rep = 'NA')
+        filtered_df = df[~df['sgID'].str.contains('_spike') & (df['cell_num'] > 1)]
+        filtered_df = filtered_df[~filtered_df['distance'].isna()]
+        filtered_df.to_csv(out_dir + "/" + sample_name + "_FilteredSampleInfo.txt", index=False, sep='\t', na_rep = 'NA')
+        return True, df, filtered_df, spike_count
+    except Exception as e:
+        log.logit(f"Error occurred while processing {sample_name}: {str(e)}", color="red")
+        if debug: log.logit(traceback.format_exc())
+        return False, None, None, None

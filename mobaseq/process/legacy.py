@@ -515,7 +515,7 @@ def plot_per_sgid(reads_csv, barcodes_csv, rel_reads_csv, rel_barcodes_csv, sgID
     axs[1, 0].set_title('Relative reads per sgID by Sample')
     axs[1, 0].tick_params(axis='x', rotation=75)
 
-    #sgID_to_gene = df_sgID.set_index('sgID')['Gene'].to_dict()  # Create the mapping dictionary
+    #sgID_to_gene = df_sgID.set_index('sgID')['sgID'].to_dict()  # Create the mapping dictionary
 
     # Plot stacked bars for relative barcodes per sgID
     for sgID in df_relative_barcodes.columns:

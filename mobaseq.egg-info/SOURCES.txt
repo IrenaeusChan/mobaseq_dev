@@ -6,6 +6,7 @@ setup.cfg
 setup.py
 mobaseq/__init__.py
 mobaseq/cli.py
+mobaseq/handlers.py
 mobaseq/version.py
 mobaseq.egg-info/PKG-INFO
 mobaseq.egg-info/SOURCES.txt

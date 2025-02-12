@@ -63,6 +63,26 @@ def clean_barcodes(merge_reads_csv, input_dir, out_dir, threads, debug):
     else:
         raise click.UsageError("You must provide either --merge_reads_csv or --input_dir, but not both.")
     
+@process.command('cell-number', short_help="Estimate cell number from raw count files.")
+@click.option('--barcode_clean_txt', '-b', type=click.Path(exists=True), required=False, help="Individual _BarcodeClean.txt file")
+@click.option('--input_dir', '-i', type=click.Path(exists=True), required=False, help="Input directory containing all processed CountRead files (_MergeReadOut.csv)")
+@click.option('--spike_ins', '-s', type=click.Path(exists=True), required=True, help="Spike-in Information Sheet")
+@click.option('--library_info', '-l', type=click.Path(exists=True), required=True, help="Counts of spike-ins")
+@click.option('--out_dir', '-o', type=click.Path(), required=True, help="Output directory to place estimated cell numbers")
+@click.option('--threads', '-t', type=click.INT, default=1, required=False, show_default=True, help="Number of threads to use for parallel processing")
+@click.option('--plot', '-p', is_flag=True, show_default=True, default=False, required=False, help="Add additional QC plots")
+@click.option('--debug', '-d', is_flag=True, show_default=True, default=False, required=False, help="Print extra debugging output")
+def cell_number(barcode_clean_txt, input_dir, spike_ins, library_info, out_dir, threads, plot, debug):
+    out_dir = tools.ensure_abs_path(out_dir)
+    if barcode_clean_txt and not input_dir: # Single file processing
+        handlers.cell_number_single(barcode_clean_txt, spike_ins, library_info, str(out_dir), plot, debug)
+        log.logit(f"---> Successfully estimated cell number for file: {barcode_clean_txt}", color="green")
+    elif input_dir and not barcode_clean_txt: # Batch processing
+        handlers.cell_number_batch(input_dir, spike_ins, library_info, str(out_dir), threads, plot, debug)
+        log.logit(f"---> Successfully estimated cell number inside {input_dir}", color="green")
+    else:
+        raise click.UsageError("You must provide either --merge_reads_csv or --input_dir, but not both.")
+    
 @process.command('sgID-qc', short_help="Summarize basic information from raw count files.")
 @click.option('--merge_reads_csv', '-m', type=click.Path(exists=True), required=False, help="Individual _MergeReadOut.csv file")
 @click.option('--input_dir', '-i', type=click.Path(exists=True), required=False, help="Input directory containing all processed CountRead files (_MergeReadOut.csv)")
@@ -115,16 +135,54 @@ def plot_mapped_reads(mapped_percentages_csv, out_dir, debug):
     plotting.mapped_reads(mapped_percentages_csv, str(out_dir), debug)
     log.logit(f"---> Successfully plotted mapped and unmapped reads. Plot can be found: {out_dir}/mapped_percentages.png", color="green")
 
+@plot.command('spike-ins', short_help="Plot spike-in counts vs. expected cell numbers.")
+@click.option('--spike_count', '-s', type=click.Path(exists=True), required=True, help="The _SpikeInCounts.txt file to plot")
+@click.option('--out_dir', '-o', type=click.Path(), required=True, help="Output directory to place summarized results")
+@click.option('--debug', '-d', is_flag=True, show_default=True, default=False, required=False, help="Print extra debugging output")
+def plot_spike_ins(spike_count, out_dir, debug):
+    handlers.plot_spike_ins(spike_count, out_dir, debug)
+    log.logit(f"---> Successfully plotted spike-in counts vs. expected cell numbers. Plot can be found: {out_dir}/spike_ins.png", color="green")
+
+@plot.command('rsq-per-sample', short_help="Plot RSQ per sample .")
+@click.option('--rsq', '-r', type=click.Path(exists=True), required=True, help="The RsqPerSample.csv file to plot")
+@click.option('--out_dir', '-o', type=click.Path(), required=True, help="Output directory to place summarized results")
+@click.option('--debug', '-d', is_flag=True, show_default=True, default=False, required=False, help="Print extra debugging output")
+def plot_rsq_per_sample(rsq, out_dir, debug):
+    handlers.plot_rsq_per_sample(rsq, out_dir, debug)
+    log.logit(f"---> Successfully plotted RSQ per sample plots. Plots can be found inside: {out_dir}", color="green")
+
+@plot.command('read-depth-per-sample', short_help="Plot reading depth per sample.")
+@click.option('--reading_depth', '-r', type=click.Path(exists=True), required=True, help="The ReadingDepthPerSample.csv file to plot")
+@click.option('--out_dir', '-o', type=click.Path(), required=True, help="Output directory to place summarized results")
+@click.option('--debug', '-d', is_flag=True, show_default=True, default=False, required=False, help="Print extra debugging output")
+def plot_read_depth_per_sample(reading_depth, out_dir, debug):
+    handlers.plot_read_depth_per_sample(reading_depth, out_dir, debug)
+    log.logit(f"---> Successfully plotted reading depth per sample plots. Plots can be found inside: {out_dir}", color="green")
+
+@plot.command('read-depth-distribution', short_help="Plot mean reading depth distribution.")
+@click.option('--count_info', '-c', type=click.Path(exists=True), required=True, help="The CountInfoPerSample.csv file to plot")
+@click.option('--out_dir', '-o', type=click.Path(), required=True, help="Output directory to place summarized results")
+@click.option('--debug', '-d', is_flag=True, show_default=True, default=False, required=False, help="Print extra debugging output")
+def plot_mean_read_depth_per_sample(count_info, out_dir, debug):
+    handlers.plot_mean_read_depth_distribution(count_info, out_dir, debug)
+    log.logit(f"---> Successfully plotted mean reading depth per sample density plots. Plots can be found inside: {out_dir}", color="green")
+
+@plot.command('rsq-distribution', short_help="Plot mean R² distribution.")
+@click.option('--count_info', '-c', type=click.Path(exists=True), required=True, help="The CountInfoPerSample.csv file to plot")
+@click.option('--out_dir', '-o', type=click.Path(), required=True, help="Output directory to place summarized results")
+@click.option('--debug', '-d', is_flag=True, show_default=True, default=False, required=False, help="Print extra debugging output")
+def plot_rsq_of_cell_count_distribution(count_info, out_dir, debug):
+    handlers.plot_mean_rsq_distribution(count_info, out_dir, debug)
+    log.logit(f"---> Successfully plotted R² distribution plots. Plots can be found inside: {out_dir}", color="green")
+
 @plot.command('per-sgID', short_help="Plot per sgID plots.")
-@click.option('--sgID_info_csv', '-i', type=click.Path(exists=True), required=True, help="The _sgID_info.csv file to plot")
+@click.option('--sgid_csv_dir', '-i', type=click.Path(exists=True), required=True, help="The directory where the four _per_sgID.csv files are located")
 @click.option('--out_dir', '-o', type=click.Path(), required=True, help="Output directory to place summarized results")
 @click.option('--no_dummy', '-nd', is_flag=True, show_default=True, default=False, required=False, help="Do not include dummy sgIDs in the plots")
 @click.option('--debug', '-d', is_flag=True, show_default=True, default=False, required=False, help="Print extra debugging output")
-def plot_per_sgid(sgID_info_csv, out_dir, no_dummy, debug):
-    out_dir = tools.ensure_abs_path(out_dir)
-    plotting.per_sgid(sgID_info_csv, str(out_dir), no_dummy, debug)
+def plot_per_sgid(sgid_csv_dir, out_dir, no_dummy, debug):
+    handlers.plot_per_sgid(sgid_csv_dir, out_dir, no_dummy, debug)
     log.logit(f"---> Successfully plotted per sgID plots. Plots can be found inside: {out_dir}", color="green")
-
 
 cli.add_command(plot)
 

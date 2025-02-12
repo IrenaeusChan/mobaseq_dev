@@ -24,7 +24,9 @@ def reverse_complement(seq):
 
 def get_sample_name(file, file_type, debug):
     dispatch = {
-        'merge_read_csv' : get_sample_name_merge_read_csv
+        'merge_read_csv' : get_sample_name_merge_read_csv,
+        'barcode_clean_txt' : get_sample_name_barcode_clean_txt,
+        'spike_count' : get_sample_name_spike_count
     }
     function = dispatch[file_type]
     return function(file, debug)
@@ -32,6 +34,18 @@ def get_sample_name(file, file_type, debug):
 def get_sample_name_merge_read_csv(file, debug):
     log.logit(f"Processing {os.path.basename(file)}.", color="green")
     sample_name = os.path.basename(file).split('_MergeReadOut.csv')[0]
+    log.logit(f"Finished processing {os.path.basename(file)}.")
+    return sample_name
+
+def get_sample_name_barcode_clean_txt(file, debug):
+    log.logit(f"Processing {os.path.basename(file)}.", color="green")
+    sample_name = os.path.basename(file).split('_BarcodeClean.txt')[0]
+    log.logit(f"Finished processing {os.path.basename(file)}.")
+    return sample_name
+
+def get_sample_name_spike_count(file, debug):
+    log.logit(f"Processing {os.path.basename(file)}.", color="green")
+    sample_name = os.path.basename(file).split('_SpikeInCounts.txt')[0]
     log.logit(f"Finished processing {os.path.basename(file)}.")
     return sample_name
 
@@ -89,11 +103,23 @@ def process_sgid_file(sgid_file, debug):
     log.logit(f"Converting sgID format.")
     sgID_df['sgID'] = sgID_df['sgID'].apply(convert_sgID_format)
     log.logit(f"Splitting sgID names.")
-    sgID_df[['Gene', 'Species', 'sgRNA']] = sgID_df['sgID'].apply(lambda x: pd.Series(split_sgID_name(x)))
+    sgID_df[['sgID', 'Species', 'sgRNA']] = sgID_df['sgID'].apply(lambda x: pd.Series(split_sgID_name(x)))
     #log.logit(f"Reverting sgID format.")
     # df_sgID['sgID'] = df_sgID['sgID'].apply(revert_sgID_format)
     log.logit(f"Finished processing sgID Excel file.")
     return sgIDs
+
+def process_spike_ins(spike_ins, debug):
+    log.logit(f"Processing {os.path.basename(spike_ins)}.", color="green")
+    log.logit(f"Reading in spike-in file.")
+    spike_in_df = pd.read_csv(spike_ins)
+    # Check if all sequences are 17 NT in length
+    if not all(len(seq) == 17 for seq in spike_in_df['sequence']):
+        err_msg = f"ERROR: Not all spike-in sequences are 17 nucleotides in length. Exiting."
+        log.logit(err_msg, color="red")
+        sys.exit(f"[err] {err_msg}")
+    log.logit(f"Finished processing spike-in information file.")
+    return spike_in_df
 
 def get_info_about_sgID_file(sgIDs, debug):
     seq_len = [len(seq) for seq in sgIDs.values()] # Calculate the minimum and maximum sequence lengths
@@ -151,7 +177,8 @@ def read_sequences_from_fastq_read_two(file_path):
 def get_list_of_files(input_dir, what_file, debug):
     dispatch = {
         'fastq' : get_list_of_fastqs,
-        'merge_reads_csv' : get_list_of_merge_reads_csv
+        'merge_reads_csv' : get_list_of_merge_reads_csv,
+        'barcode_clean_txt' : get_list_of_barcode_clean_txt
     }
     function = dispatch[what_file]
     return function(input_dir, debug)
@@ -182,7 +209,6 @@ def get_list_of_fastqs(input_dir, debug):
 
 def get_list_of_merge_reads_csv(input_dir, debug):
     log.logit(f"Getting list of MergeReadOut files from {input_dir}.", color="green")
-    # Get a list of all FASTQ files in the input directory
     merge_read_csv_files = glob.glob(os.path.join(input_dir, "*_MergeReadOut.csv"))
     # Check if the list is empty
     if len(merge_read_csv_files) == 0:
@@ -194,4 +220,19 @@ def get_list_of_merge_reads_csv(input_dir, debug):
     files_and_sample_names = []
     for merge_read_csv in merge_read_csv_files:
         files_and_sample_names.append((merge_read_csv, get_sample_name(merge_read_csv, "merge_read_csv", debug)))
+    return files_and_sample_names
+
+def get_list_of_barcode_clean_txt(input_dir, debug):
+    log.logit(f"Getting list of BarcodeClean files from {input_dir}.", color="green")
+    barcode_clean_txt_files = glob.glob(os.path.join(input_dir, "*_BarcodeClean.txt"))
+    # Check if the list is empty
+    if len(barcode_clean_txt_files) == 0:
+        err_msg = f"ERROR: No BarcodeClean files found in {input_dir}. Exiting."
+        log.logit(err_msg, color="red")
+        sys.exit(f"[err] {err_msg}")
+    log.logit(f"Found {len(barcode_clean_txt_files)} BarcodeClean files in {input_dir}.")
+    barcode_clean_txt_files.sort()
+    files_and_sample_names = []
+    for barcode_clean_txt in barcode_clean_txt_files:
+        files_and_sample_names.append((barcode_clean_txt, get_sample_name(barcode_clean_txt, "barcode_clean_txt", debug)))
     return files_and_sample_names
