@@ -381,7 +381,8 @@ def cell_number(barcode_clean_txt, sample_name, spike_ins, library_info, out_dir
             left_on='barcode',
             right_on='sequence'
         )
-        if len(spike_count) == 0: raise ValueError(f"No spike-ins found for sample {sample_name}")
+        if len(spike_count) == 0:
+            log.logit(f"WARNING: No spike-ins found for sample {sample_name}", color = "yellow")
         spike_num = library_info[library_info['Sample'] == sample_name]['Spike_Num'].iloc[0]
         log.logit(f"Calculating the expected cell numbers based on the spike-ins having a starting value of {spike_num}...")
         spike_count = spike_count.assign(
@@ -410,13 +411,20 @@ def cell_number(barcode_clean_txt, sample_name, spike_ins, library_info, out_dir
                     rsq = rsq_redo
             spike_count.to_csv(out_dir + "/" + sample_name + "_SpikeInCounts.txt", index=False, sep='\t', na_rep = 'NA')
             log.logit(f"The highest R² value is {rsq}.")
-        else: # Calculate slope directly from the ratio when only one point is available
+        elif len(spike_count) == 1: # Calculate slope directly from the ratio when only one point is available
             slope = float(spike_count['expected_cellnum'].values / spike_count['count'].values)
-        log.logit(f"Using the slope of {slope} to calculate the cell numbers.")
-        df = df.assign(
-            cell_num=lambda x: x['count'] * slope,
-            reading_depth=1/slope
-        )
+        if len(spike_count) != 0:
+            log.logit(f"Using the slope of {slope} to calculate the cell numbers.")
+            df = df.assign(
+                cell_num=lambda x: x['count'] * slope,
+                reading_depth=1/slope
+            )
+        else:
+            log.logit(f"WARNING: No spike-ins found for sample {sample_name}. Cannot calculate cell numers.", color = "yellow")
+            df = df.assign(
+                cell_num=np.nan,
+                reading_depth=np.nan
+            )
         log.logit(f"Finished calculating cell numbers from {os.path.basename(barcode_clean_txt)}.")
         # Add additional information to the DataFrame
         df = df.assign(
@@ -439,6 +447,7 @@ def cell_number(barcode_clean_txt, sample_name, spike_ins, library_info, out_dir
         filtered_df = df[~df['sgID'].str.contains('_spike') & (df['cell_num'] > 1)]
         filtered_df = filtered_df[~filtered_df['distance'].isna()]
         filtered_df.to_csv(out_dir + "/" + sample_name + "_FilteredSampleInfo.txt", index=False, sep='\t', na_rep = 'NA')
+        spike_count.to_csv(out_dir + "/" + sample_name + "_SpikeInInfo.txt", index=False, sep='\t', na_rep = 'NA')
         return True, df, filtered_df, spike_count
     except Exception as e:
         log.logit(f"Error occurred while processing {sample_name}: {str(e)}", color="red")
