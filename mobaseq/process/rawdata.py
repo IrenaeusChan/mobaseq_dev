@@ -298,7 +298,7 @@ def clean_barcodes(merge_reads_csv, sample_name, threads, out_dir, debug):
         log.logit(f"Starting to clean barcodes from: {sample_name}.", color="green")
         log.logit(f"Opening {os.path.basename(merge_reads_csv)}...")
         
-        df = pd.read_csv(merge_reads_csv, header=None, names=["gene", "distance", "barcode", "count"])
+        df = pd.read_csv(merge_reads_csv, header=None, names=["sgID", "distance", "barcode", "count"])
 
         log.logit(f"Finished reading {os.path.basename(merge_reads_csv)}.")
         log.logit(f"Starting to clean barcodes from {os.path.basename(merge_reads_csv)}...")

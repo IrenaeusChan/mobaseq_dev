@@ -1,5 +1,8 @@
 # Ignore pycache
-*__pycache__/
+*__pycache__/*
+
+# Ignore egg.info files
+*.egg-info/*
 
 # Ignore all ._ files
 ._*
