@@ -274,7 +274,7 @@ def remove_spurious_barcodes(sgid_df):
     distances = barcodes[:, None, :] != barcodes[None, :, :]            # Shape will be (n_barcodes, n_barcodes, barcode_length)
     hamming_distances = np.sum(distances, axis=2)                       # Sum differences along last axis to get Hamming distances
     mask = np.triu(np.ones_like(hamming_distances, dtype=bool), k=1)    # Create mask for upper triangle (we only need to compare each pair once)
-    similar_pairs = np.where((hamming_distances <= 1) & mask)           # Get indices where distance <= 2 (similar barcodes)
+    similar_pairs = np.where((hamming_distances <= 2) & mask)           # Get indices where distance <= 2 (similar barcodes)
     # Initialize result array
     bool_all = np.ones(len(sgid_df), dtype=bool)
     
