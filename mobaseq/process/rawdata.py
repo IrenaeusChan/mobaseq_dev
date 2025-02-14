@@ -5,6 +5,7 @@ import pandas as pd
 from tqdm import tqdm
 import multiprocessing as mp
 from sklearn.linear_model import LinearRegression
+from clint.textui import indent
 import traceback
 import mobaseq.utils.logger as log
 import mobaseq.process.tools as tools
@@ -260,16 +261,15 @@ def countreads(read_one, read_two, sample_name, sgIDs, min_length, max_length, a
         if debug: log.logit(traceback.format_exc())
         return False
 
-def remove_spurious_barcodes(sgid_df):
+def remove_spurious_barcodes(sgid_df, sample_name, out_dir, debug):
+    with indent(4, quote=' >'): log.logit(f"sgID: {sgid_df['sgID'].iloc[0]}")
     sgid_df = sgid_df.sort_values(by='count', ascending=False)
     if len(sgid_df) <= 1:
         return sgid_df
     
     sgid_df = sgid_df.reset_index(drop=True)
-
     # Convert barcodes to numpy character array
     barcodes = np.array([list(bc) for bc in sgid_df['barcode']])
-    
     # Calculate distances using broadcasting
     distances = barcodes[:, None, :] != barcodes[None, :, :]            # Shape will be (n_barcodes, n_barcodes, barcode_length)
     hamming_distances = np.sum(distances, axis=2)                       # Sum differences along last axis to get Hamming distances
@@ -277,19 +277,41 @@ def remove_spurious_barcodes(sgid_df):
     similar_pairs = np.where((hamming_distances <= 2) & mask)           # Get indices where distance <= 2 (similar barcodes)
     # Initialize result array
     bool_all = np.ones(len(sgid_df), dtype=bool)
-    
+    # Create hamming_dstances DataFrame
+    hamming_distances_df = pd.DataFrame(hamming_distances, index=sgid_df.index, columns=sgid_df.index)
+    data = []
     # Mark false using original indices
     for i, j in zip(*similar_pairs):
-        #print(sgid_df.iloc[i]['barcode'], sgid_df.iloc[j]['barcode'])
-        #print(hamming_distances_df.iloc[i][j])
         # We skip barcodes with less than 5 counts because we don't know which one is the main colony
         if sgid_df.iloc[i]['count'] < 5:
             continue
+        already_removed = not bool_all[i] or not bool_all[j]
+        if not already_removed:
+            data.append({
+                'sgID': sgid_df['sgID'].iloc[0],
+                'barcode1': sgid_df.iloc[i]['barcode'],
+                'barcode2': sgid_df.iloc[j]['barcode'],
+                'count1': sgid_df.iloc[i]['count'],
+                'count2': sgid_df.iloc[j]['count'],
+                'hamming_distance': hamming_distances_df.iloc[i][j],
+                'reads_rel_to_parent' : sgid_df.iloc[j]['count'] / sgid_df.iloc[i]['count']
+            })
         # However, for all other barcodes, we remove the one with the lower count
         # and since this is organized by count_size, [i] SHOULD always be greater than [j]
         # exception is when i == j, which is the same barcode, then it's a 50/50 toss up...
         bool_all[j] = False
-    
+    barcode_df = pd.DataFrame(data) if data else pd.DataFrame()
+    if debug and len(barcode_df) > 0:
+        output_file = out_dir + "/" + sample_name + "_BarcodeHandshakeResults.txt"
+        write_header = not os.path.exists(output_file)
+        barcode_df.to_csv(
+            output_file,
+            mode='a',
+            header=write_header,
+            index=False,
+            sep='\t',
+            na_rep='NA'
+        )
     # Return a new DataFrame with the filtered barcodes
     return sgid_df[bool_all]
     
@@ -302,13 +324,16 @@ def clean_barcodes(merge_reads_csv, sample_name, threads, out_dir, debug):
 
         log.logit(f"Finished reading {os.path.basename(merge_reads_csv)}.")
         log.logit(f"Starting to clean barcodes from {os.path.basename(merge_reads_csv)}...")
+        # Remove potentially old Handshake results
+        if os.path.exists(out_dir + "/" + sample_name + "_BarcodeHandshakeResults.txt") and debug:
+            os.remove(out_dir + "/" + sample_name + "_BarcodeHandshakeResults.txt")
         # Remove barcodes where the count is less than 2
         df = df[df['count'] >= 2]
         if threads == 1:
-            clean_df = df.groupby('sgID').apply(remove_spurious_barcodes)
+            clean_df = df.groupby('sgID').apply(lambda x: remove_spurious_barcodes(x, sample_name, out_dir, debug))
         else:
             with mp.Pool(threads) as p:
-                results = p.starmap(remove_spurious_barcodes, [(group,) for _, group in df.groupby('sgID')])
+                results = p.starmap(remove_spurious_barcodes, [(group, sample_name, out_dir, debug) for _, group in df.groupby('sgID')])
             clean_df = pd.concat(results, ignore_index=True)
         log.logit(f"Finished cleaning barcodes from {os.path.basename(merge_reads_csv)}.")
         log.logit(f"Writing output to {out_dir}/{sample_name}_BarcodeClean.txt.")
