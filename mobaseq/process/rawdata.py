@@ -11,6 +11,24 @@ import mobaseq.utils.logger as log
 import mobaseq.process.tools as tools
 import mobaseq.qc.plot as plotting
 
+import signal
+from functools import wraps
+from contextlib import contextmanager
+
+@contextmanager
+def timeout_handler(seconds, description=""):
+    def timeout_signal(signum, frame):
+        raise TimeoutError(f"Process timed out after {seconds}s: {description}")
+
+    # Set signal handler
+    signal.signal(signal.SIGALRM, timeout_signal)
+    signal.alarm(seconds)
+    
+    try:
+        yield
+    finally:
+        signal.alarm(0)
+
 def vectorized_hamming_distance(s1_array, s2_array):
     """Calculate the Hamming distance between arrays of sequences."""
     max_len = max(max(len(s1) for s1 in s1_array), max(len(s2) for s2 in s2_array)) # Get the maximum length of the sequences
@@ -95,174 +113,99 @@ def get_regex_patterns(min_length, max_length, all_start_with_G):
         # The GC.{5}TA.{5}GC.{5}TA.{5}GC is the random barcode that is 17 nt long has specific GC and TA sequences separated by 5 Ns
     return regexR1, regexR2
 
-def countreads_test(read_one, read_two, sample_name, sgIDs, min_length, max_length, all_start_with_G, out_dir, debug):
-    log.logit(f"Starting to get the read counts from: {sample_name}.", color="green")
-    log.logit(f"Opening {os.path.basename(read_one)} and {os.path.basename(read_two)}...")
-    
-    # This returns a list with the sequences from the FASTQ file
-    read_one_sequences = tools.read_sequences_from_fastq(read_one, debug)
-    #f2 = [reverse_complement(seq) for seq in read_sequences_from_fastq(read_two)]
-    read_two_sequences = tools.read_sequences_from_fastq(read_two, debug)    
-    log.logit(f"Finished reading sequences from {os.path.basename(read_one)} and {os.path.basename(read_two)}.")
-    #read_two_sequences = vectorized_reverse_complement(read_two_sequences)
-    #if debug: log.logit(f"Finished performing reverse complement on {os.path.basename(read_two)}.", color="yellow")
-    if debug: 
-        log.logit(f"There was a total of {len(read_one_sequences)} sequences in {os.path.basename(read_one)}.", color="yellow")
-        log.logit(f"There was a total of {len(read_two_sequences)} sequences in {os.path.basename(read_two)}.", color="yellow")
-    if len(read_one_sequences) != len(read_two_sequences):
-        err_msg = f"ERROR: The number of sequences in {os.path.basename(read_one)} and {os.path.basename(read_two)} do not match. Exiting."
-        log.logit(err_msg, color="red")
-        sys.exit(f"[err] {err_msg}")
-
-    regexR1, regexR2 = get_regex_patterns(min_length, max_length, all_start_with_G)
-
-    sgID_barcodes = {}
-    log.logit(f"Starting to match sequences from {os.path.basename(read_one)} and {os.path.basename(read_two)}...")
-    if debug: log.logit(f"Using the following regex patterns: {regexR1} and {regexR2}.")
-
-    for seq1, seq2 in tqdm(zip(read_one_sequences, read_two_sequences), total=len(read_one_sequences)):  # Add progress bar
-    #for seq1, seq2 in zip(read_one_sequences, read_two_sequences):
-        # Check if the sequences match the regex pattern
-        r1_match = regexR1.search(seq1)
-        #r2_match = regexR2.search(tools.reverse_complement(seq2))
-        r2_match = regexR2.search(seq2)
-        if r1_match and r2_match:
-            # If we can see patterns in both reads
-            if min_length > 8:
-                r1_sgID = r1_match.group(2)  # For longer guide RNAs, R1sgID is from group 2
-                r1_barcode = r1_match.group(1)    # R1BC is from group 1
-                r2_sgID = tools.reverse_complement(r2_match.group(2))  # For longer guide RNAs, R2sgID is from group 2
-                r2_barcode = tools.reverse_complement(r2_match.group(3))    # R2BC is from group 1
-            else: #TODO: If we do change to not do the reverse complement, need to account for this
-                r1_sgID = r1_match.group(1)  # For shorter guide RNAs, R1sgID is from group 1
-                r1_barcode = r1_match.group(2)    # R1BC is from group 2
-                r2_sgID = r2_match.group(1)  # For shorter guide RNAs, R2sgID is from group 1
-                r2_barcode = r2_match.group(2)    # R2BC is from group 2
-
-            if r1_barcode == r2_barcode and r1_sgID == r2_sgID and (('N' not in r1_barcode) or ('N' not in r2_barcode)):
-            #if r1_barcode == r2_barcode and ('N' not in r1_barcode):   # This is wrong
-                dict_key = (f"{r1_sgID},{r1_barcode}")
-                # If sgID is not in the dictionary, add it
-                if dict_key not in sgID_barcodes:
-                    sgID_barcodes[dict_key] = 1
-                else:
-                    sgID_barcodes[dict_key] += 1
-    if debug: log.logit(f"Found {len(sgID_barcodes)} unique sgIDs.", color="yellow")
-    log.logit(f"Finished matching sequences from {os.path.basename(read_one)} and {os.path.basename(read_two)}.")
-    # Convert the filtered_df to a numpy array of tuples
-    sgID_barcodes_list = list(sgID_barcodes.items())
-    sgID_barcodes_split = [(split_key(key)[0], split_key(key)[1], value) for key, value in sgID_barcodes_list]
-    sgID_barcodes_array = np.array(sgID_barcodes_split, dtype=[('sgID', 'U50'), ('barcode', 'U50'), ('total', 'i4')])
-    # Convert the sgIDs dictionary to a numpy array of tuples
-    sgID_array = np.array(list(sgIDs.items()), dtype=[('sgID', 'U50'), ('sgRNA_seq', 'U50')])
-    # Get the closest gene for each sgID in the sgID_barcodes_array
-    log.logit(f"Matching sgIDs to genes...")
-    gene, distance = get_closest_gene_vectorized(sgID_array, sgID_barcodes_array)
-    log.logit(f"Finished matching sgIDs to genes.")
-
-    log.logit(f"Creating output dictionary...")
-    combined_dict = {}
-    for gene, distance, barcode, total in zip(gene, distance, sgID_barcodes_array['barcode'], sgID_barcodes_array['total']):
-        key = f"{gene},{distance},{barcode}"
-        if key not in combined_dict:
-            combined_dict[key] = total
-        else:
-            combined_dict[key] += total
-    log.logit(f"Finished matching sequences from {os.path.basename(read_one)} and {os.path.basename(read_two)}.")
-    log.logit(f"Writing output to {sample_name}_MergeReadOutTest.csv.")
-    with open(out_dir + "/" + sample_name + "_MergeReadOutTest.csv", "w") as f:
-        for key in sorted(combined_dict, key=combined_dict.get, reverse=True):
-            f.write(",".join(map(str, [key, combined_dict[key]])) + "\n")
-    log.logit(f"Finished writing output to {sample_name}_MergeReadOutTest.csv.")
-
 def countreads(read_one, read_two, sample_name, sgIDs, min_length, max_length, all_start_with_G, out_dir, debug):
     try:
-        log.logit(f"Starting to get the read counts from: {sample_name}.", color="green")
-        log.logit(f"Opening {os.path.basename(read_one)} and {os.path.basename(read_two)}...")
-        
-        # This returns a list with the sequences from the FASTQ file
-        read_one_sequences = tools.read_sequences_from_fastq(read_one, debug)
-        #f2 = [reverse_complement(seq) for seq in read_sequences_from_fastq(read_two)]
-        read_two_sequences = tools.read_sequences_from_fastq(read_two, debug)    
-        log.logit(f"Finished reading sequences from {os.path.basename(read_one)} and {os.path.basename(read_two)}.")
-        #read_two_sequences = vectorized_reverse_complement(read_two_sequences)
-        #if debug: log.logit(f"Finished performing reverse complement on {os.path.basename(read_two)}.", color="yellow")
-        if debug: 
-            log.logit(f"There was a total of {len(read_one_sequences)} sequences in {os.path.basename(read_one)}.", color="yellow")
-            log.logit(f"There was a total of {len(read_two_sequences)} sequences in {os.path.basename(read_two)}.", color="yellow")
-        if len(read_one_sequences) != len(read_two_sequences):
-            err_msg = f"ERROR: The number of sequences in {os.path.basename(read_one)} and {os.path.basename(read_two)} do not match. Exiting."
-            log.logit(err_msg, color="red")
-            sys.exit(f"[err] {err_msg}")
-        
-        regexR1, regexR2 = get_regex_patterns(min_length, max_length, all_start_with_G)
+        with timeout_handler(300, f"count-reads({sample_name})"):
+            log.logit(f"Starting to get the read counts from: {sample_name}.", color="green")
+            log.logit(f"Opening {os.path.basename(read_one)} and {os.path.basename(read_two)}...")
+            
+            # This returns a list with the sequences from the FASTQ file
+            read_one_sequences = tools.read_sequences_from_fastq(read_one, debug)
+            #f2 = [reverse_complement(seq) for seq in read_sequences_from_fastq(read_two)]
+            read_two_sequences = tools.read_sequences_from_fastq(read_two, debug)    
+            log.logit(f"Finished reading sequences from {os.path.basename(read_one)} and {os.path.basename(read_two)}.")
+            #read_two_sequences = vectorized_reverse_complement(read_two_sequences)
+            #if debug: log.logit(f"Finished performing reverse complement on {os.path.basename(read_two)}.", color="yellow")
+            if debug: 
+                log.logit(f"There was a total of {len(read_one_sequences)} sequences in {os.path.basename(read_one)}.", color="yellow")
+                log.logit(f"There was a total of {len(read_two_sequences)} sequences in {os.path.basename(read_two)}.", color="yellow")
+            if len(read_one_sequences) != len(read_two_sequences):
+                err_msg = f"ERROR: The number of sequences in {os.path.basename(read_one)} and {os.path.basename(read_two)} do not match. Exiting."
+                log.logit(err_msg, color="red")
+                sys.exit(f"[err] {err_msg}")
+            
+            regexR1, regexR2 = get_regex_patterns(min_length, max_length, all_start_with_G)
 
-        sgID_barcodes = {}
-        log.logit(f"Starting to match sequences from {os.path.basename(read_one)} and {os.path.basename(read_two)}...")
-        if debug: log.logit(f"Using the following regex patterns: {regexR1} and {regexR2}.")
+            sgID_barcodes = {}
+            log.logit(f"Starting to match sequences from {os.path.basename(read_one)} and {os.path.basename(read_two)}...")
+            if debug: log.logit(f"Using the following regex patterns: {regexR1} and {regexR2}.")
 
-        for seq1, seq2 in tqdm(zip(read_one_sequences, read_two_sequences), total=len(read_one_sequences)):  # Add progress bar
-        #for seq1, seq2 in zip(read_one_sequences, read_two_sequences):
-            # Check if the sequences match the regex pattern
-            r1_match = regexR1.search(seq1)
-            #r2_match = regexR2.search(tools.reverse_complement(seq2))
-            r2_match = regexR2.search(seq2)
-            if r1_match and r2_match:
-                # If we can see patterns in both reads
-                if min_length > 8:
-                    r1_sgID = r1_match.group(2)  # For longer guide RNAs, R1sgID is from group 2
-                    r1_barcode = r1_match.group(1)    # R1BC is from group 1
-                    r2_sgID = tools.reverse_complement(r2_match.group(2))  # For longer guide RNAs, R2sgID is from group 2
-                    r2_barcode = tools.reverse_complement(r2_match.group(3))    # R2BC is from group 1
-                else: #TODO: If we do change to not do the reverse complement, need to account for this
-                    r1_sgID = r1_match.group(1)  # For shorter guide RNAs, R1sgID is from group 1
-                    r1_barcode = r1_match.group(2)    # R1BC is from group 2
-                    r2_sgID = r2_match.group(1)  # For shorter guide RNAs, R2sgID is from group 1
-                    r2_barcode = r2_match.group(2)    # R2BC is from group 2
+            for seq1, seq2 in tqdm(zip(read_one_sequences, read_two_sequences), total=len(read_one_sequences)):  # Add progress bar
+            #for seq1, seq2 in zip(read_one_sequences, read_two_sequences):
+                # Check if the sequences match the regex pattern
+                r1_match = regexR1.search(seq1)
+                #r2_match = regexR2.search(tools.reverse_complement(seq2))
+                r2_match = regexR2.search(seq2)
+                if r1_match and r2_match:
+                    # If we can see patterns in both reads
+                    if min_length > 8:
+                        r1_sgID = r1_match.group(2)  # For longer guide RNAs, R1sgID is from group 2
+                        r1_barcode = r1_match.group(1)    # R1BC is from group 1
+                        r2_sgID = tools.reverse_complement(r2_match.group(2))  # For longer guide RNAs, R2sgID is from group 2
+                        r2_barcode = tools.reverse_complement(r2_match.group(3))    # R2BC is from group 1
+                    else: #TODO: If we do change to not do the reverse complement, need to account for this
+                        r1_sgID = r1_match.group(1)  # For shorter guide RNAs, R1sgID is from group 1
+                        r1_barcode = r1_match.group(2)    # R1BC is from group 2
+                        r2_sgID = r2_match.group(1)  # For shorter guide RNAs, R2sgID is from group 1
+                        r2_barcode = r2_match.group(2)    # R2BC is from group 2
 
-                if r1_barcode == r2_barcode and r1_sgID == r2_sgID and (('N' not in r1_barcode) or ('N' not in r2_barcode)):
-                #if r1_barcode == r2_barcode and ('N' not in r1_barcode):   # This is wrong
-                    dict_key = (f"{r1_sgID},{r1_barcode}")
-                    # If sgID is not in the dictionary, add it
-                    if dict_key not in sgID_barcodes:
-                        sgID_barcodes[dict_key] = 1
-                    else:
-                        sgID_barcodes[dict_key] += 1
-        if debug: log.logit(f"Found {len(sgID_barcodes)} unique sgIDs.", color="yellow")
-        log.logit(f"Finished matching sequences from {os.path.basename(read_one)} and {os.path.basename(read_two)}.")
-        # Convert the sgID_barcodes dictionary to a numpy array of tuples
-        sgID_barcodes_list = list(sgID_barcodes.items())
-        sgID_barcodes_split = [(split_key(key)[0], split_key(key)[1], value) for key, value in sgID_barcodes_list]
-        sgID_barcodes_array = np.array(sgID_barcodes_split, dtype=[('sgID', 'U50'), ('barcode', 'U50'), ('total', 'i4')])
-        # Convert the sgIDs dictionary to a numpy array of tuples
-        sgID_array = np.array(list(sgIDs.items()), dtype=[('sgID', 'U50'), ('sgRNA_seq', 'U50')])
-        # Get the closest gene for each sgID in the sgID_barcodes_array
-        log.logit(f"Matching sgIDs to genes...")
-        gene, distance = get_closest_gene_vectorized(sgID_array, sgID_barcodes_array)
-        log.logit(f"Finished matching sgIDs to genes.")
+                    if r1_barcode == r2_barcode and r1_sgID == r2_sgID and (('N' not in r1_barcode) or ('N' not in r2_barcode)):
+                    #if r1_barcode == r2_barcode and ('N' not in r1_barcode):   # This is wrong
+                        dict_key = (f"{r1_sgID},{r1_barcode}")
+                        # If sgID is not in the dictionary, add it
+                        if dict_key not in sgID_barcodes:
+                            sgID_barcodes[dict_key] = 1
+                        else:
+                            sgID_barcodes[dict_key] += 1
+            if debug: log.logit(f"Found {len(sgID_barcodes)} unique sgIDs.", color="yellow")
+            log.logit(f"Finished matching sequences from {os.path.basename(read_one)} and {os.path.basename(read_two)}.")
+            # Convert the sgID_barcodes dictionary to a numpy array of tuples
+            sgID_barcodes_list = list(sgID_barcodes.items())
+            sgID_barcodes_split = [(split_key(key)[0], split_key(key)[1], value) for key, value in sgID_barcodes_list]
+            sgID_barcodes_array = np.array(sgID_barcodes_split, dtype=[('sgID', 'U50'), ('barcode', 'U50'), ('total', 'i4')])
+            # Convert the sgIDs dictionary to a numpy array of tuples
+            sgID_array = np.array(list(sgIDs.items()), dtype=[('sgID', 'U50'), ('sgRNA_seq', 'U50')])
+            # Get the closest gene for each sgID in the sgID_barcodes_array
+            log.logit(f"Matching sgIDs to genes...")
+            gene, distance = get_closest_gene_vectorized(sgID_array, sgID_barcodes_array)
+            log.logit(f"Finished matching sgIDs to genes.")
 
-        log.logit(f"Creating output dictionary...")
-        combined_dict = {}
-        for gene, distance, barcode, total in zip(gene, distance, sgID_barcodes_array['barcode'], sgID_barcodes_array['total']):
-            key = f"{gene},{distance},{barcode}"
-            if key not in combined_dict:
-                combined_dict[key] = total
-            else:
-                combined_dict[key] += total
-        log.logit(f"Finished matching sequences from {os.path.basename(read_one)} and {os.path.basename(read_two)}.")
-        log.logit(f"Writing output to {sample_name}_MergeReadOut.csv.")
-        with open(out_dir + "/" + sample_name + "_MergeReadOut.csv", "w") as f:
-            for key in sorted(combined_dict, key=combined_dict.get, reverse=True):
-                f.write(",".join(map(str, [key, combined_dict[key]])) + "\n")
-        log.logit(f"Finished writing output to {sample_name}_MergeReadOut.csv.")
-        return True
+            log.logit(f"Creating output dictionary...")
+            combined_dict = {}
+            for gene, distance, barcode, total in zip(gene, distance, sgID_barcodes_array['barcode'], sgID_barcodes_array['total']):
+                key = f"{gene},{distance},{barcode}"
+                if key not in combined_dict:
+                    combined_dict[key] = total
+                else:
+                    combined_dict[key] += total
+            log.logit(f"Finished matching sequences from {os.path.basename(read_one)} and {os.path.basename(read_two)}.")
+            log.logit(f"Writing output to {sample_name}_MergeReadOut.csv.")
+            with open(out_dir + "/" + sample_name + "_MergeReadOut.csv", "w") as f:
+                for key in sorted(combined_dict, key=combined_dict.get, reverse=True):
+                    f.write(",".join(map(str, [key, combined_dict[key]])) + "\n")
+            log.logit(f"Finished writing output to {sample_name}_MergeReadOut.csv.")
+            return True
+    except TimeoutError as te:
+        log.logit(f"{sample_name} - TimeoutError: {te}", color="red")
+        return False
     except Exception as e:
         log.logit(f"Error occurred while processing {sample_name}: {str(e)}", color="red")
         if debug: log.logit(traceback.format_exc())
         return False
 
 def remove_spurious_barcodes(sgid_df, sample_name, out_dir, debug):
-    with indent(4, quote=' >'): log.logit(f"sgID: {sgid_df['sgID'].iloc[0]}")
+    with indent(4, quote=' >'): 
+        if debug: log.logit(f"sgID: {sgid_df['sgID'].iloc[0]}")
     sgid_df = sgid_df.sort_values(by='count', ascending=False)
     if len(sgid_df) <= 1:
         return sgid_df
@@ -317,28 +260,32 @@ def remove_spurious_barcodes(sgid_df, sample_name, out_dir, debug):
     
 def clean_barcodes(merge_reads_csv, sample_name, threads, out_dir, debug):
     try:
-        log.logit(f"Starting to clean barcodes from: {sample_name}.", color="green")
-        log.logit(f"Opening {os.path.basename(merge_reads_csv)}...")
-        
-        df = pd.read_csv(merge_reads_csv, header=None, names=["sgID", "distance", "barcode", "count"])
+        with timeout_handler(300, f"clean-barcodes({sample_name})"):
+            log.logit(f"Starting to clean barcodes from: {sample_name}.", color="green")
+            log.logit(f"Opening {os.path.basename(merge_reads_csv)}...")
+            
+            df = pd.read_csv(merge_reads_csv, header=None, names=["sgID", "distance", "barcode", "count"])
 
-        log.logit(f"Finished reading {os.path.basename(merge_reads_csv)}.")
-        log.logit(f"Starting to clean barcodes from {os.path.basename(merge_reads_csv)}...")
-        # Remove potentially old Handshake results
-        if os.path.exists(out_dir + "/" + sample_name + "_BarcodeHandshakeResults.txt") and debug:
-            os.remove(out_dir + "/" + sample_name + "_BarcodeHandshakeResults.txt")
-        # Remove barcodes where the count is less than 2
-        df = df[df['count'] >= 2]
-        if threads == 1:
-            clean_df = df.groupby('sgID').apply(lambda x: remove_spurious_barcodes(x, sample_name, out_dir, debug))
-        else:
-            with mp.Pool(threads) as p:
-                results = p.starmap(remove_spurious_barcodes, [(group, sample_name, out_dir, debug) for _, group in df.groupby('sgID')])
-            clean_df = pd.concat(results, ignore_index=True)
-        log.logit(f"Finished cleaning barcodes from {os.path.basename(merge_reads_csv)}.")
-        log.logit(f"Writing output to {out_dir}/{sample_name}_BarcodeClean.txt.")
-        clean_df.to_csv(out_dir + "/" + sample_name + "_BarcodeClean.txt", index=False, sep='\t', na_rep = 'NA')
-        return True
+            log.logit(f"Finished reading {os.path.basename(merge_reads_csv)}.")
+            log.logit(f"Starting to clean barcodes from {os.path.basename(merge_reads_csv)}...")
+            # Remove potentially old Handshake results
+            if os.path.exists(out_dir + "/" + sample_name + "_BarcodeHandshakeResults.txt") and debug:
+                os.remove(out_dir + "/" + sample_name + "_BarcodeHandshakeResults.txt")
+            # Remove barcodes where the count is less than 2
+            df = df[df['count'] >= 2]
+            if threads == 1:
+                clean_df = df.groupby('sgID').apply(lambda x: remove_spurious_barcodes(x, sample_name, out_dir, debug))
+            else:
+                with mp.Pool(threads) as p:
+                    results = p.starmap(remove_spurious_barcodes, [(group, sample_name, out_dir, debug) for _, group in df.groupby('sgID')])
+                clean_df = pd.concat(results, ignore_index=True)
+            log.logit(f"Finished cleaning barcodes from {os.path.basename(merge_reads_csv)}.")
+            log.logit(f"Writing output to {out_dir}/{sample_name}_BarcodeClean.txt.")
+            clean_df.to_csv(out_dir + "/" + sample_name + "_BarcodeClean.txt", index=False, sep='\t', na_rep = 'NA')
+            return True
+    except TimeoutError as te:
+        log.logit(f"{sample_name} - TimeoutError: {te}", color="red")
+        return False
     except Exception as e:
         log.logit(f"Error occurred while processing {sample_name}: {str(e)}", color="red")
         if debug: log.logit(traceback.format_exc())
@@ -392,88 +339,92 @@ def get_slope_and_rsq(spike_count):
 
 def cell_number(barcode_clean_txt, sample_name, spike_ins, library_info, out_dir, plot, debug):
     try:
-        log.logit(f"Starting to get cell numbers from: {sample_name}.", color="green")
-        log.logit(f"Opening {os.path.basename(barcode_clean_txt)}...")
-        df = pd.read_csv(barcode_clean_txt, sep='\t')
-        spike_data = df[df['sgID'] == 'sgDummy']
-        log.logit(f"Finished reading {os.path.basename(barcode_clean_txt)}.")
-        log.logit(f"Starting to calculate cell numbers from {os.path.basename(barcode_clean_txt)}...")
-        # Getting the spike-in information by merging the spike_ins and barcode_clean_txt DataFrames 
-        log.logit(f"Determining the raw counts of spike-ins...")
-        spike_count = pd.merge(
-            spike_data,
-            spike_ins[['sequence', 'expected', 'name']],
-            left_on='barcode',
-            right_on='sequence'
-        )
-        if len(spike_count) == 0:
-            log.logit(f"WARNING: No spike-ins found for sample {sample_name}", color = "yellow")
-        spike_num = library_info[library_info['Sample'] == sample_name]['Spike_Num'].iloc[0]
-        log.logit(f"Calculating the expected cell numbers based on the spike-ins having a starting value of {spike_num}...")
-        spike_count = spike_count.assign(
-            Sample_ID=sample_name,
-            expected_cellnum=lambda x: x['expected'] * spike_num
-        )
-        if len(spike_count) > 1: # If there is more than one spike-in, calculate the slope and R² value
-            spike_count, slope, rsq = get_slope_and_rsq(spike_count)
-            if debug: 
-                log.logit(f"SciKit-Learn Linear Regression Model: {slope}, {rsq}")
-                print(spike_count[['Sample_ID', 'count', 'name', 'expected_cellnum', 'z_scores']])
-            if plot: plotting.spike_ins(spike_count, slope, rsq, "red" if rsq < 0.9 else "black", sample_name, out_dir)
-            # If the R² value is less than 0.9, remove the Spike-in with the highest z-score
-            if rsq < 0.9:
-                log.logit(f"The R² value is {rsq}, trying to remove the Spike-in with the highest z-score...")
-                max_abs_zscore = np.abs(spike_count['z_scores']).max()
-                spike_count_redo = spike_count[np.abs(spike_count['z_scores']) != max_abs_zscore]
-                spike_count_redo, slope_redo, rsq_redo = get_slope_and_rsq(spike_count_redo)
+        with timeout_handler(300, f"cell-number({sample_name})"):
+            log.logit(f"Starting to get cell numbers from: {sample_name}.", color="green")
+            log.logit(f"Opening {os.path.basename(barcode_clean_txt)}...")
+            df = pd.read_csv(barcode_clean_txt, sep='\t')
+            spike_data = df[df['sgID'] == 'sgDummy']
+            log.logit(f"Finished reading {os.path.basename(barcode_clean_txt)}.")
+            log.logit(f"Starting to calculate cell numbers from {os.path.basename(barcode_clean_txt)}...")
+            # Getting the spike-in information by merging the spike_ins and barcode_clean_txt DataFrames 
+            log.logit(f"Determining the raw counts of spike-ins...")
+            spike_count = pd.merge(
+                spike_data,
+                spike_ins[['sequence', 'expected', 'name']],
+                left_on='barcode',
+                right_on='sequence'
+            )
+            if len(spike_count) == 0:
+                log.logit(f"WARNING: No spike-ins found for sample {sample_name}", color = "yellow")
+            spike_num = library_info[library_info['Sample'] == sample_name]['Spike_Num'].iloc[0]
+            log.logit(f"Calculating the expected cell numbers based on the spike-ins having a starting value of {spike_num}...")
+            spike_count = spike_count.assign(
+                Sample_ID=sample_name,
+                expected_cellnum=lambda x: x['expected'] * spike_num
+            )
+            if len(spike_count) > 1: # If there is more than one spike-in, calculate the slope and R² value
+                spike_count, slope, rsq = get_slope_and_rsq(spike_count)
                 if debug: 
-                    log.logit(f"SciKit-Learn Linear Regression Model: {slope_redo}, {rsq_redo}")
-                    print(spike_count_redo[['Sample_ID', 'count', 'name', 'expected_cellnum', 'z_scores']])
-                if plot: plotting.spike_ins(spike_count_redo, slope_redo, rsq_redo, "red" if rsq < 0.9 else "black", sample_name, out_dir, True)
-                if rsq_redo > rsq:
-                    spike_count = spike_count_redo
-                    slope = slope_redo
-                    rsq = rsq_redo
-            spike_count.to_csv(out_dir + "/" + sample_name + "_SpikeInCounts.txt", index=False, sep='\t', na_rep = 'NA')
-            log.logit(f"The highest R² value is {rsq}.")
-        elif len(spike_count) == 1: # Calculate slope directly from the ratio when only one point is available
-            slope = float(spike_count['expected_cellnum'].values / spike_count['count'].values)
-        if len(spike_count) != 0:
-            log.logit(f"Using the slope of {slope} to calculate the cell numbers.")
+                    log.logit(f"SciKit-Learn Linear Regression Model: {slope}, {rsq}")
+                    print(spike_count[['Sample_ID', 'count', 'name', 'expected_cellnum', 'z_scores']])
+                if plot: plotting.spike_ins(spike_count, slope, rsq, "red" if rsq < 0.9 else "black", sample_name, out_dir)
+                # If the R² value is less than 0.9, remove the Spike-in with the highest z-score
+                if rsq < 0.9:
+                    log.logit(f"The R² value is {rsq}, trying to remove the Spike-in with the highest z-score...")
+                    max_abs_zscore = np.abs(spike_count['z_scores']).max()
+                    spike_count_redo = spike_count[np.abs(spike_count['z_scores']) != max_abs_zscore]
+                    spike_count_redo, slope_redo, rsq_redo = get_slope_and_rsq(spike_count_redo)
+                    if debug: 
+                        log.logit(f"SciKit-Learn Linear Regression Model: {slope_redo}, {rsq_redo}")
+                        print(spike_count_redo[['Sample_ID', 'count', 'name', 'expected_cellnum', 'z_scores']])
+                    if plot: plotting.spike_ins(spike_count_redo, slope_redo, rsq_redo, "red" if rsq < 0.9 else "black", sample_name, out_dir, True)
+                    if rsq_redo > rsq:
+                        spike_count = spike_count_redo
+                        slope = slope_redo
+                        rsq = rsq_redo
+                spike_count.to_csv(out_dir + "/" + sample_name + "_SpikeInCounts.txt", index=False, sep='\t', na_rep = 'NA')
+                log.logit(f"The highest R² value is {rsq}.")
+            elif len(spike_count) == 1: # Calculate slope directly from the ratio when only one point is available
+                slope = float(spike_count['expected_cellnum'].values / spike_count['count'].values)
+            if len(spike_count) != 0:
+                log.logit(f"Using the slope of {slope} to calculate the cell numbers.")
+                df = df.assign(
+                    cell_num=lambda x: x['count'] * slope,
+                    reading_depth=1/slope
+                )
+            else:
+                log.logit(f"WARNING: No spike-ins found for sample {sample_name}. Cannot calculate cell numers.", color = "yellow")
+                df = df.assign(
+                    cell_num=np.nan,
+                    reading_depth=np.nan
+                )
+            log.logit(f"Finished calculating cell numbers from {os.path.basename(barcode_clean_txt)}.")
+            # Add additional information to the DataFrame
             df = df.assign(
-                cell_num=lambda x: x['count'] * slope,
-                reading_depth=1/slope
+                Sample_ID = sample_name,
+                Tissue = library_info[library_info['Sample'] == sample_name]['Tissue'].iloc[0],
+                Time_Point = library_info[library_info['Sample'] == sample_name]['Time_Point'].iloc[0],
+                Mouse_ID = library_info[library_info['Sample'] == sample_name]['Mouse_ID'].iloc[0],
+                Mouse_Genotype = library_info[library_info['Sample'] == sample_name]['Mouse_Genotype'].iloc[0],
+                Sex = library_info[library_info['Sample'] == sample_name]['Sex'].iloc[0],
+                Cell_Lib = library_info[library_info['Sample'] == sample_name]['Cell_Library'].iloc[0],
+                Body_Weight_Trans = library_info[library_info['Sample'] == sample_name]['BW_Trans'].iloc[0],
+                Body_Weight_Coll = library_info[library_info['Sample'] == sample_name]['BW_Coll'].iloc[0],
+                Tissue_Weight = library_info[library_info['Sample'] == sample_name]['Tissue_Weight'].iloc[0],
+                Spike_Num = spike_num,
+                Spike_Rsq = rsq if len(spike_count) > 1 else 0
             )
-        else:
-            log.logit(f"WARNING: No spike-ins found for sample {sample_name}. Cannot calculate cell numers.", color = "yellow")
-            df = df.assign(
-                cell_num=np.nan,
-                reading_depth=np.nan
-            )
-        log.logit(f"Finished calculating cell numbers from {os.path.basename(barcode_clean_txt)}.")
-        # Add additional information to the DataFrame
-        df = df.assign(
-            Sample_ID = sample_name,
-            Tissue = library_info[library_info['Sample'] == sample_name]['Tissue'].iloc[0],
-            Time_Point = library_info[library_info['Sample'] == sample_name]['Time_Point'].iloc[0],
-            Mouse_ID = library_info[library_info['Sample'] == sample_name]['Mouse_ID'].iloc[0],
-            Mouse_Genotype = library_info[library_info['Sample'] == sample_name]['Mouse_Genotype'].iloc[0],
-            Sex = library_info[library_info['Sample'] == sample_name]['Sex'].iloc[0],
-            Cell_Lib = library_info[library_info['Sample'] == sample_name]['Cell_Library'].iloc[0],
-            Body_Weight_Trans = library_info[library_info['Sample'] == sample_name]['BW_Trans'].iloc[0],
-            Body_Weight_Coll = library_info[library_info['Sample'] == sample_name]['BW_Coll'].iloc[0],
-            Tissue_Weight = library_info[library_info['Sample'] == sample_name]['Tissue_Weight'].iloc[0],
-            Spike_Num = spike_num,
-            Spike_Rsq = rsq if len(spike_count) > 1 else 0
-        )
-        df['Sample_Rsq'] = df['Sample_ID'] + "_" + df['Spike_Rsq'].astype(str)
-        df = cell_num_metrics(df, spike_ins)
-        df.to_csv(out_dir + "/" + sample_name + "_UnfilteredSampleInfo.txt", index=False, sep='\t', na_rep = 'NA')
-        filtered_df = df[~df['sgID'].str.contains('_spike') & (df['cell_num'] > 1)]
-        filtered_df = filtered_df[~filtered_df['distance'].isna()]
-        filtered_df.to_csv(out_dir + "/" + sample_name + "_FilteredSampleInfo.txt", index=False, sep='\t', na_rep = 'NA')
-        spike_count.to_csv(out_dir + "/" + sample_name + "_SpikeInInfo.txt", index=False, sep='\t', na_rep = 'NA')
-        return True, df, filtered_df, spike_count
+            df['Sample_Rsq'] = df['Sample_ID'] + "_" + df['Spike_Rsq'].astype(str)
+            df = cell_num_metrics(df, spike_ins)
+            df.to_csv(out_dir + "/" + sample_name + "_UnfilteredSampleInfo.txt", index=False, sep='\t', na_rep = 'NA')
+            filtered_df = df[~df['sgID'].str.contains('_spike') & (df['cell_num'] > 1)]
+            filtered_df = filtered_df[~filtered_df['distance'].isna()]
+            filtered_df.to_csv(out_dir + "/" + sample_name + "_FilteredSampleInfo.txt", index=False, sep='\t', na_rep = 'NA')
+            spike_count.to_csv(out_dir + "/" + sample_name + "_SpikeInInfo.txt", index=False, sep='\t', na_rep = 'NA')
+            return True, df, filtered_df, spike_count
+    except TimeoutError as te:
+        log.logit(f"{sample_name} - TimeoutError: {te}", color="red")
+        return False, None, None, None
     except Exception as e:
         log.logit(f"Error occurred while processing {sample_name}: {str(e)}", color="red")
         if debug: log.logit(traceback.format_exc())

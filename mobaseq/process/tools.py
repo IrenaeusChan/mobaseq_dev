@@ -178,7 +178,8 @@ def get_list_of_files(input_dir, what_file, debug):
     dispatch = {
         'fastq' : get_list_of_fastqs,
         'merge_reads_csv' : get_list_of_merge_reads_csv,
-        'barcode_clean_txt' : get_list_of_barcode_clean_txt
+        'barcode_clean_txt' : get_list_of_barcode_clean_txt,
+        'cell_count' : get_list_of_cell_count
     }
     function = dispatch[what_file]
     return function(input_dir, debug)
@@ -235,4 +236,33 @@ def get_list_of_barcode_clean_txt(input_dir, debug):
     files_and_sample_names = []
     for barcode_clean_txt in barcode_clean_txt_files:
         files_and_sample_names.append((barcode_clean_txt, get_sample_name(barcode_clean_txt, "barcode_clean_txt", debug)))
+    return files_and_sample_names
+
+def get_list_of_cell_count(input_dir, debug):
+    log.logit(f"Getting list of UnfilteredSampleInfo, FilteredSampleInfo, and SpikeInCount files from {input_dir}.", color="green")
+    unfiltered_sample_info_files = glob.glob(os.path.join(input_dir, "*_UnfilteredSampleInfo.txt"))
+    filtered_sample_info_files = glob.glob(os.path.join(input_dir, "*_FilteredSampleInfo.txt"))
+    spike_count_files = glob.glob(os.path.join(input_dir, "*_SpikeInCounts.txt"))
+    # Check if the list is empty
+    if len(unfiltered_sample_info_files) == 0:
+        err_msg = f"ERROR: No UnfilteredSampleInfo files found in {input_dir}. Exiting."
+        log.logit(err_msg, color="red")
+        sys.exit(f"[err] {err_msg}")
+    log.logit(f"Found {len(unfiltered_sample_info_files)} UnfilteredSampleInfo files in {input_dir}.")
+    if len(filtered_sample_info_files) == 0:
+        err_msg = f"ERROR: No FilteredSampleInfo files found in {input_dir}. Exiting."
+        log.logit(err_msg, color="red")
+        sys.exit(f"[err] {err_msg}")
+    log.logit(f"Found {len(filtered_sample_info_files)} FilteredSampleInfo files in {input_dir}.")
+    if len(spike_count_files) == 0:
+        err_msg = f"ERROR: No SpikeInCount files found in {input_dir}. Exiting."
+        log.logit(err_msg, color="red")
+        sys.exit(f"[err] {err_msg}")
+    log.logit(f"Found {len(spike_count_files)} SpikeInCount files in {input_dir}.")
+    unfiltered_sample_info_files.sort()
+    filtered_sample_info_files.sort()
+    spike_count_files.sort()
+    files_and_sample_names = []
+    for unfiltered, filtered, spike_count in zip(unfiltered_sample_info_files, filtered_sample_info_files, spike_count_files):
+        files_and_sample_names.append(((unfiltered, filtered, spike_count), get_sample_name(spike_count, "spike_count", debug)))
     return files_and_sample_names

@@ -293,13 +293,18 @@ def plot_per_sgid(reads_csv, barcodes_csv, rel_reads_csv, rel_barcodes_csv, sgid
 
 cli.add_command(legacy)
 
-@cli.command('do-something', short_help="Should check a few things and output: Hello World! :D")
+@cli.command('run', short_help="Runs the entire pipeline from raw FASTQ files to generating the final FilteredSampleInfo.csv")
+@click.option('--input_dir', '-i', type=click.Path(exists=True), required=False, help="Directory with all R1/R2 FASTQ files")
+@click.option('--sgid_file', '-f', type=click.Path(exists=True), required=True, help="sgID Excel File")
+@click.option('--spike_ins', '-s', type=click.Path(exists=True), required=True, help="Spike-in Information Sheet")
+@click.option('--library_info', '-l', type=click.Path(exists=True), required=True, help="Counts of spike-ins")
+@click.option('--plot', '-p', is_flag=True, show_default=True, default=False, required=False, help="Add additional QC plots")
+@click.option('--out_dir', '-o', type=click.Path(), required=True, help="Output directory to place CountRead results")
+@click.option('--threads', '-t', type=click.INT, default=1, required=False, show_default=True, help="Number of threads to use for parallel processing")
 @click.option('--debug', '-d', is_flag=True, show_default=True, default=False, required=False, help="Print extra debugging output")
-def do_something(debug):
-    """Test Command."""
-    log.logit(f"---> Successfully ran your first CLI script!", color="green")
-    puts(colored.green(f"Hello World! :D"))
-    #import ch.vdbtools.importer as importer
-    #importer.import_samples(samples, sample_duckdb, batch_number, debug, clobber)
-    #log.logit(f"---> Successfully ran your first CLI script!", color="green")
-    #puts(colored.green(f"Hello World! :D"))
+def run_pipeline(input_dir, sgid_file, spike_ins, library_info, plot, out_dir, threads, debug):
+    """Command to run the entire pipeline from start to finish."""
+    log.logit(f"Starting MOBASeq Analysis Pipeline...", color="green")
+    out_dir = tools.ensure_abs_path(out_dir)
+    handlers.run_pipeline(input_dir, sgid_file, spike_ins, library_info, plot, str(out_dir), threads, debug)
+    log.logit(f"MOBASeq Analysis Pipeline Complete!", color="green")
