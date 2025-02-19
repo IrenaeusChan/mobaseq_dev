@@ -359,7 +359,7 @@ def run_pipeline(input_dir, sgid_file, spike_ins, library_info, plot, out_dir, t
     count_reads_out_dir = tools.ensure_abs_path(count_reads_out_dir)
     with mp.Pool(threads) as p:
         success = p.starmap(rawdata.countreads, [
-            (fastq1, fastq2, sample_name, sgID_dict, min_length, max_length, all_start_with_G, count_reads_out_dir, debug)
+            (fastq1, fastq2, sample_name, sgID_dict, min_length, max_length, all_start_with_G, str(count_reads_out_dir), debug)
             for fastq1, fastq2, sample_name in list_of_fastqs
         ])
     if not all(success):
@@ -379,7 +379,7 @@ def run_pipeline(input_dir, sgid_file, spike_ins, library_info, plot, out_dir, t
     clean_barcodes_out_dir = tools.ensure_abs_path(clean_barcodes_out_dir)
     with mp.Pool(threads) as p:
         success = p.starmap(rawdata.clean_barcodes, [
-            (merge_read_csv, sample_name, 1, clean_barcodes_out_dir, debug) for merge_read_csv, sample_name in merge_reads_csv_files
+            (merge_read_csv, sample_name, 1, str(clean_barcodes_out_dir), debug) for merge_read_csv, sample_name in merge_reads_csv_files
         ])
     if not all(success):
         err_msg = f"ERROR: Some processes during Clean-Barcodes Task failed. Check the logs for more details. Exiting."
@@ -393,9 +393,11 @@ def run_pipeline(input_dir, sgid_file, spike_ins, library_info, plot, out_dir, t
 
     # sgID QC
     log.logit(f"Summarizing sgID information for all samples...", color="green")
+    sgid_qc_out_dir = out_dir + "/sgIDQCOutFiles"
+    sgid_qc_out_dir = tools.ensure_abs_path(sgid_qc_out_dir)
     with mp.Pool(threads) as p:
         results = p.starmap(summarize.sgID_info, [
-            (merge_reads_csv, sample_name, sgID_dict, str(out_dir), debug) for merge_reads_csv, sample_name in merge_reads_csv_files
+            (merge_reads_csv, sample_name, sgID_dict, str(sgid_qc_out_dir), debug) for merge_reads_csv, sample_name in merge_reads_csv_files
         ])
     success = [res[0] for res in results]
     sgID_qc_df_sample_name = [[res[1], res[2]] for res in results]
@@ -412,10 +414,10 @@ def run_pipeline(input_dir, sgid_file, spike_ins, library_info, plot, out_dir, t
 
         # Merge each result DataFrame into the combined DataFrames
         for sgID_qc_df, sample_name in sgID_qc_df_sample_name:
-            combined_total_reads = pd.merge(combined_total_reads, df[['sgID', 'total_reads']].rename(columns={'total_reads': f'{sample_name}'}), on='sgID', how='outer').fillna(0)
-            combined_num_barcodes = pd.merge(combined_num_barcodes, df[['sgID', 'num_barcodes']].rename(columns={'num_barcodes': f'{sample_name}'}), on='sgID', how='outer').fillna(0)
-            combined_rel_reads = pd.merge(combined_rel_reads, df[['sgID', 'rel_reads']].rename(columns={'rel_reads': f'{sample_name}'}), on='sgID', how='outer').fillna(0)
-            combined_rel_barcodes = pd.merge(combined_rel_barcodes, df[['sgID', 'rel_barcodes']].rename(columns={'rel_barcodes': f'{sample_name}'}), on='sgID', how='outer').fillna(0)
+            combined_total_reads = pd.merge(combined_total_reads, sgID_qc_df[['sgID', 'total_reads']].rename(columns={'total_reads': f'{sample_name}'}), on='sgID', how='outer').fillna(0)
+            combined_num_barcodes = pd.merge(combined_num_barcodes, sgID_qc_df[['sgID', 'num_barcodes']].rename(columns={'num_barcodes': f'{sample_name}'}), on='sgID', how='outer').fillna(0)
+            combined_rel_reads = pd.merge(combined_rel_reads, sgID_qc_df[['sgID', 'rel_reads']].rename(columns={'rel_reads': f'{sample_name}'}), on='sgID', how='outer').fillna(0)
+            combined_rel_barcodes = pd.merge(combined_rel_barcodes, sgID_qc_df[['sgID', 'rel_barcodes']].rename(columns={'rel_barcodes': f'{sample_name}'}), on='sgID', how='outer').fillna(0)
 
         log.logit(f"Results written to {out_dir}")
         # Save each combined DataFrame to a separate CSV file
@@ -461,7 +463,7 @@ def run_pipeline(input_dir, sgid_file, spike_ins, library_info, plot, out_dir, t
     cell_number_out_dir = tools.ensure_abs_path(cell_number_out_dir)
     with mp.Pool(threads) as p:
         results = p.starmap(rawdata.cell_number, [
-            (barcode_clean_txt, sample_name, spike_ins, library_info, cell_number_out_dir, plot, debug)
+            (barcode_clean_txt, sample_name, spike_ins, library_info, str(cell_number_out_dir), plot, debug)
             for barcode_clean_txt, sample_name in barcode_clean_txt_files
         ])
     success = [res[0] for res in results]

@@ -53,3 +53,4 @@ ENV PATH="/opt/python-$PYTHON_VERSION:$PATH"
 # Install pip and the package
 RUN /opt/python-$PYTHON_VERSION/bin/pip3 install --upgrade pip
 RUN /opt/python-$PYTHON_VERSION/bin/pip3 install --upgrade git+https://github.com/IrenaeusChan/python_dev_template.git
+RUN /opt/python-$PYTHON_VERSION/bin/pip3 install --upgrade git+https://github.com/IrenaeusChan/mobaseq_dev.git

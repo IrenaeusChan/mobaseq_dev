@@ -14,6 +14,12 @@ source .venv/bin/activate
 pip3 install -e .
 ```
 
+## Usage
+
+```bash
+mobaseq --help
+```
+
 Definitions:
 Metastatic Burden = (Total Cell Number in Tissue / Total Cell Number prior to Transplantation) / (Total Cell Number for sgSafe Ctrl / Total Cell Number for sgSafe Ctrl prior to Transplantation)
 
@@ -22,7 +28,7 @@ MOBASeq
 Major Changes:
     - Python CLI for ease of download and user friendly processing
     - Addressing *BUG* where R1_Barcode == R2_Barcode but R1_sgID =/= R2_sgID
-    - TODO: Consideration for removing "fuzzy" matching for improved processing speed and statistical power
+    - Moba500 61 Samples: 31 Minutes to Fully Analyze using 4 Cores
 
 Minor Changes:
     - Changed algorithm for sgID --> GeneName mapping to search through entire file rather than stopping at first "best match"
@@ -31,7 +37,7 @@ Minor Changes:
 
 Optimizations:
     - Introduced condition if the FASTQ size is greater than 1GB to utilize a large data reading method
-    - Utilizing NumPy package to vectorize most data manipulation, decreases overall processing time (e.g. 61 MOBASeq500 Samples ~2Hrs)
+    - Utilizing NumPy package to vectorize most data manipulation, decreases overall processing time
     - Implemented machine byte code version of Hamming Distance to improve computational efficiency during Hamming distance calculation
     - Utilized multithreading and parallized sample processing for amount of cores available on computer or cluster to improve processing efficiency
         - E.g. for 5 Samples (of varying sizes):
