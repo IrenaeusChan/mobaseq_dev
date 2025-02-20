@@ -393,11 +393,17 @@ def cell_number(barcode_clean_txt, sample_name, spike_ins, library_info, out_dir
                     reading_depth=1/slope
                 )
             else:
-                log.logit(f"WARNING: No spike-ins found for sample {sample_name}. Cannot calculate cell numers.", color = "yellow")
                 df = df.assign(
                     cell_num=np.nan,
                     reading_depth=np.nan
                 )
+                # If the sample name contains preTrans, then we will use the reading depth to calculate the cell number
+                if 'preTran' in sample_name:
+                    log.logit(f"Sample {sample_name} contains 'preTran'. Using a default of 10 x ReadCounts to calculate the cell numbers.")
+                    df['cell_num'] = df['count'] * 10
+                    df['reading_depth'] = 0.1
+                else:
+                    log.logit(f"WARNING: No spike-ins found for sample {sample_name}. Cannot calculate cell numbers.", color = "yellow")
             log.logit(f"Finished calculating cell numbers from {os.path.basename(barcode_clean_txt)}.")
             # Add additional information to the DataFrame
             df = df.assign(
