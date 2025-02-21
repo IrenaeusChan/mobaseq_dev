@@ -26,6 +26,28 @@ def process_with_timeout(pool, func, args_list, timeout=3600):
             results.append(False)
     return results
 
+def parallel_parallel_process_with_timeout(pool, func, args_list, timeout=1800):
+    # Start all processes asynchronously
+    async_results = [
+        pool.apply_async(func, args) 
+        for args in args_list
+    ]
+    
+    # Collect results with timeout
+    results = []
+    for i, async_result in enumerate(async_results):
+        try:
+            result = async_result.get(timeout=timeout)
+            results.append(result)
+        except mp.TimeoutError:
+            log.logit(f"Process {i} timed out after {timeout}s", color="red")
+            results.append(False)
+        except Exception as e:
+            log.logit(f"Process {i} failed: {str(e)}", color="red")
+            results.append(False)
+    
+    return results
+
 def countreads_single(read_one, read_two, sample_name, sgid_file, out_dir, debug):
     sample_name = tools.process_fastq_files(read_one, read_two, debug)
     sgID_dict = tools.process_sgid_file(sgid_file, debug)
@@ -42,7 +64,7 @@ def countreads_batch(input_dir, sgid_file, out_dir, threads, debug):
         #     (fastq1, fastq2, sample_name, sgID_dict, min_length, max_length, all_start_with_G, str(out_dir), debug)
         #     for fastq1, fastq2, sample_name in list_of_fastqs
         # ])
-        success = process_with_timeout(
+        success = parallel_parallel_process_with_timeout(
             pool=p,
             func=rawdata.countreads,
             args_list=[
@@ -68,7 +90,7 @@ def clean_barcodes_batch(input_dir, out_dir, threads, debug):
         # success = p.starmap(rawdata.clean_barcodes, [
         #     (merge_read_csv, sample_name, 1, out_dir, debug) for merge_read_csv, sample_name in merge_reads_csv_files
         # ])
-        success = process_with_timeout(
+        success = parallel_process_with_timeout(
             pool=p,
             func=rawdata.clean_barcodes,
             args_list=[
@@ -99,7 +121,7 @@ def cell_number_batch(input_dir, spike_ins, library_info, out_dir, threads, plot
         #     (barcode_clean_txt, sample_name, spike_ins, library_info, out_dir, plot, debug)
         #     for barcode_clean_txt, sample_name in barcode_clean_txt_files
         # ])
-        results = process_with_timeout(
+        results = parallel_parallel_process_with_timeout(
             pool=p,
             func=rawdata.cell_number,
             args_list=[
@@ -168,7 +190,7 @@ def sgID_qc_batch(input_dir, sgid_file, out_dir, threads, debug):
         #     (merge_reads_csv, sample_name, sgID_dict, str(out_dir), debug)
         #     for merge_reads_csv, sample_name in merge_reads_csv_files
         # ])
-        results = process_with_timeout(
+        results = parallel_parallel_process_with_timeout(
             pool=p,
             func=summarize.sgID_info,
             args_list=[
@@ -233,7 +255,7 @@ def mapped_reads_batch(input_dir, sgid_file, out_dir, threads, debug):
         # results = p.starmap(summarize.get_total_reads, [
         #     (merge_read_csv[0], sgID_dict) for merge_read_csv in merge_reads_csv_files
         # ])
-        results = process_with_timeout(
+        results = parallel_process_with_timeout(
             pool=p,
             func=summarize.get_total_reads,
             args_list=[
@@ -424,7 +446,7 @@ def run_pipeline(input_dir, sgid_file, spike_ins, library_info, plot, out_dir, t
         #     (fastq1, fastq2, sample_name, sgID_dict, min_length, max_length, all_start_with_G, str(count_reads_out_dir), debug)
         #     for fastq1, fastq2, sample_name in list_of_fastqs
         # ])
-        success = process_with_timeout(
+        success = parallel_process_with_timeout(
             pool=p,
             func=rawdata.countreads,
             args_list=[
@@ -452,7 +474,7 @@ def run_pipeline(input_dir, sgid_file, spike_ins, library_info, plot, out_dir, t
         # success = p.starmap(rawdata.clean_barcodes, [
         #     (merge_read_csv, sample_name, 1, str(clean_barcodes_out_dir), debug) for merge_read_csv, sample_name in merge_reads_csv_files
         # ])
-        success = process_with_timeout(
+        success = parallel_process_with_timeout(
             pool=p,
             func=rawdata.clean_barcodes,
             args_list=[
@@ -478,7 +500,7 @@ def run_pipeline(input_dir, sgid_file, spike_ins, library_info, plot, out_dir, t
         # results = p.starmap(summarize.sgID_info, [
         #     (merge_reads_csv, sample_name, sgID_dict, str(sgid_qc_out_dir), debug) for merge_reads_csv, sample_name in merge_reads_csv_files
         # ])
-        results = process_with_timeout(
+        results = parallel_process_with_timeout(
             pool=p,
             func=summarize.sgID_info,
             args_list=[
@@ -520,7 +542,7 @@ def run_pipeline(input_dir, sgid_file, spike_ins, library_info, plot, out_dir, t
         # results = p.starmap(summarize.get_total_reads, [
         #     (merge_read_csv, sgID_dict) for merge_read_csv, _ in merge_reads_csv_files
         # ])
-        results = process_with_timeout(
+        results = parallel_process_with_timeout(
             pool=p,
             func=summarize.get_total_reads,
             args_list=[
@@ -561,7 +583,7 @@ def run_pipeline(input_dir, sgid_file, spike_ins, library_info, plot, out_dir, t
         #     (barcode_clean_txt, sample_name, spike_ins, library_info, str(cell_number_out_dir), plot, debug)
         #     for barcode_clean_txt, sample_name in barcode_clean_txt_files
         # ])
-        results = process_with_timeout(
+        results = parallel_process_with_timeout(
             pool=p,
             func=rawdata.cell_number,
             args_list=[
