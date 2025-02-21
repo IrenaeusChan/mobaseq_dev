@@ -23,6 +23,15 @@ mobaseq --help
 Definitions:
 Metastatic Burden = (Total Cell Number in Tissue / Total Cell Number prior to Transplantation) / (Total Cell Number for sgSafe Ctrl / Total Cell Number for sgSafe Ctrl prior to Transplantation)
 
+Metatstatic Seeding = (Total Colony Number in Tissue / Total Cell Number prior to Transplantation) / (Total Colony Number for sgSafe Ctrl / Total Cell Number for sgSafe Ctrl prior to Transplantation)
+
+Peak Mode = How many doublings needed to reach the current Cell Number, i.e. 2^PeakMode = Cell Number
+
+Distance/Outlier Score = Ideally if MetBurden and MetSeeding are 1, then the Distance/Outlier Score should be 0. If the Distance/Outlier Score is greater than 0, then the sample is an outlier.
+
+If MetBurden > MetSeeding this indicates that this sgID is a Tumor Suppressor
+If MetBurden < MetSeeding this indicates that this sgID is a Oncogene/Tumor Promoter
+
 MOBASeq
 =======
 Major Changes:
@@ -49,16 +58,3 @@ Optimizations:
             - Single Core: 04:14:09 --> 04:15:50 Elapsed Time 1 min 41s
             - Four Cores: 04:08:06 --> 04:08:44 Elapsed Time 38s
             - Legacy Algorithm: 03:23:31 --> 04:14:08 Elapsed Time 50 min 37s
-
-Questions:
-    - If we dont know where LV binds to the genome, how do we use CRISPR to target genes specifically?
-    - Why is blood not filtered for Cell_Num > 50 but all other Tissue types are?
-    - What does CTC stand for? SuperMet
-      - What's the SuperMet definition again? If detected in the blood and detected in the tissue?
-    - What is unique about these sgIDs that they must be removed? 
-      - sgSafe13, sgSafe1, Ccnd1 (especially this because it's not a sgSafe Ctrl)
-    - Why is Peak Mode defined on a Log2 scale?
-    - Why Log2 vs Log10? (Is it because assumed exponential growth?)
-    - Where does this gene list come from (for Dormancy)?
-      - gene_list <- c("Crebbp", "Pten", "Csnk1a1", "Gpatch8", "Zeb1", "Tsc1", "Tsc2", "Gata6", "Mga","Zmiz1", "Grhpr", "Hnf4a", "Eif5b", "Soga1", "Nup98", "Ctrl")
-    - Mode2 for the normalmixEM, why for anything less than 2,000?
