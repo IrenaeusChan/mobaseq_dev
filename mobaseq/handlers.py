@@ -26,7 +26,7 @@ def process_with_timeout(pool, func, args_list, timeout=3600):
             results.append(False)
     return results
 
-def parallel_parallel_process_with_timeout(pool, func, args_list, timeout=1800):
+def parallel_process_with_timeout(pool, func, args_list, timeout=1800):
     # Start all processes asynchronously
     async_results = [
         pool.apply_async(func, args) 
