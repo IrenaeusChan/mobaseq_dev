@@ -115,7 +115,7 @@ def get_regex_patterns(min_length, max_length, all_start_with_G):
 
 def countreads(read_one, read_two, sample_name, sgIDs, min_length, max_length, all_start_with_G, out_dir, debug):
     try:
-        with timeout_handler(300, f"count-reads({sample_name})"):
+        with timeout_handler(1800, f"count-reads({sample_name})"):
             log.logit(f"Starting to get the read counts from: {sample_name}.", color="green")
             log.logit(f"Opening {os.path.basename(read_one)} and {os.path.basename(read_two)}...")
             
@@ -260,7 +260,7 @@ def remove_spurious_barcodes(sgid_df, sample_name, out_dir, debug):
     
 def clean_barcodes(merge_reads_csv, sample_name, threads, out_dir, debug):
     try:
-        with timeout_handler(300, f"clean-barcodes({sample_name})"):
+        with timeout_handler(1800, f"clean-barcodes({sample_name})"):
             log.logit(f"Starting to clean barcodes from: {sample_name}.", color="green")
             log.logit(f"Opening {os.path.basename(merge_reads_csv)}...")
             
@@ -339,7 +339,7 @@ def get_slope_and_rsq(spike_count):
 
 def cell_number(barcode_clean_txt, sample_name, spike_ins, library_info, out_dir, plot, debug):
     try:
-        with timeout_handler(300, f"cell-number({sample_name})"):
+        with timeout_handler(1800, f"cell-number({sample_name})"):
             log.logit(f"Starting to get cell numbers from: {sample_name}.", color="green")
             log.logit(f"Opening {os.path.basename(barcode_clean_txt)}...")
             df = pd.read_csv(barcode_clean_txt, sep='\t')

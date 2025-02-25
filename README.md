@@ -13,7 +13,7 @@ OR
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip3 install -e .
+python3 -m pip install -e .
 ```
 
 ## Usage
