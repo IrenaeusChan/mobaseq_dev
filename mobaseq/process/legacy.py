@@ -374,7 +374,7 @@ def plot_mapped_and_unmapped(input_dir, sgIDDict, out_dir, debug):
     # Show the plot
     fig.autofmt_xdate()
     plt.tight_layout()
-    plt.show()
+    
     fig.savefig(os.path.join(out_dir, 'mapped_percentages.pdf'), format='pdf')
 
 # Function to filter DataFrame and extract values greater than 0.1
@@ -573,9 +573,9 @@ def plot_per_sgid(reads_csv, barcodes_csv, rel_reads_csv, rel_barcodes_csv, sgID
         plt.savefig(os.path.join(out_dir, 'sgID_distribution_with_relative_reads_and_barcodes_filtered_noDummy.pdf'), 
                 format='pdf', bbox_inches='tight')
         # Show the combined plot
-        plt.show()
+        
     else:
         plt.savefig(os.path.join(out_dir, 'sgID_distribution_with_relative_reads_and_barcodes_filtered.pdf'), 
                 format='pdf', bbox_inches='tight')
         # Show the combined plot
-        plt.show()
+        

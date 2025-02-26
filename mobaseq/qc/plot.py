@@ -52,7 +52,6 @@ def mapped_reads(mapped_percentages_csv, out_dir, debug):
     plt.legend()
     plt.tight_layout()
     plt.savefig(f"{out_dir}/mapped_percentages.png")
-    plt.show()
 
 def spike_ins(spike_count, slope, rsq, plot_color, sample_name, out_dir, redraw = False):
     log.logit(f"Plotting spike-in counts vs. expected cell numbers", color = "green")
@@ -93,7 +92,6 @@ def spike_ins(spike_count, slope, rsq, plot_color, sample_name, out_dir, redraw 
         plt.savefig(f"{out_dir}/{sample_name}_R-SquaredPlot_Redraw.png")
     else:
         plt.savefig(f"{out_dir}/{sample_name}_R-SquaredPlot.png")
-    plt.show()
     return fig
 
 def rsq_per_sample(Rsq, out_dir):
@@ -110,7 +108,6 @@ def rsq_per_sample(Rsq, out_dir):
     #plt.xticks(rotation=45)
     plt.tight_layout()
     plt.savefig(f"{out_dir}/R-squared_per_sample.png")
-    plt.show()
 
 def reading_depth_per_sample(df, out_dir):
     log.logit(f"Plotting reading depth per sample", color = "green")
@@ -126,7 +123,6 @@ def reading_depth_per_sample(df, out_dir):
     #plt.xticks(rotation=45)
     plt.tight_layout()
     plt.savefig(f"{out_dir}/reading_depth_per_sample.png")
-    plt.show()
 
 def mean_reading_depth_distribution(aggr_df, out_dir):
     log.logit(f"Plotting mean reading depth per sample", color = "green")
@@ -149,7 +145,6 @@ def mean_reading_depth_distribution(aggr_df, out_dir):
     plt.title('Density Plot of Reading Depth per Sample')
     plt.tight_layout()
     plt.savefig(f"{out_dir}/mean_reading_depth_density.png")
-    plt.show()
 
 #ggplot(agg_data, aes(x = mean_ReadingDepth)) +
 #  geom_density(fill = "blue", alpha = 0.5) +
@@ -175,7 +170,6 @@ def mean_rsq_distribution(aggr_df, out_dir):
     #plt.xticks(rotation=45)
     plt.tight_layout()
     plt.savefig(f"{out_dir}/rsq_of_cell_count_distribution.png")
-    plt.show()
 
 def check_all_sgIDs(df1, df2, df3, df4):
     # Check if all sgIDs are the same
@@ -264,4 +258,3 @@ def per_sgid(total_reads_df, unique_barcodes_df, relative_reads_df, relative_bar
     suffix = '_noDummy' if no_dummy else ''
     save_name = os.path.join(out_dir, f'sgID_distribution_with_relative_reads_and_barcodes_filtered{suffix}.pdf')
     plt.savefig(save_name, format='pdf', bbox_inches='tight')
-    plt.show()
