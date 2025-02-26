@@ -64,7 +64,7 @@ def countreads_batch(input_dir, sgid_file, out_dir, threads, debug):
         #     (fastq1, fastq2, sample_name, sgID_dict, min_length, max_length, all_start_with_G, str(out_dir), debug)
         #     for fastq1, fastq2, sample_name in list_of_fastqs
         # ])
-        success = parallel_parallel_process_with_timeout(
+        success = parallel_process_with_timeout(
             pool=p,
             func=rawdata.countreads,
             args_list=[
@@ -121,7 +121,7 @@ def cell_number_batch(input_dir, spike_ins, library_info, out_dir, threads, plot
         #     (barcode_clean_txt, sample_name, spike_ins, library_info, out_dir, plot, debug)
         #     for barcode_clean_txt, sample_name in barcode_clean_txt_files
         # ])
-        results = parallel_parallel_process_with_timeout(
+        results = parallel_process_with_timeout(
             pool=p,
             func=rawdata.cell_number,
             args_list=[
@@ -190,7 +190,7 @@ def sgID_qc_batch(input_dir, sgid_file, out_dir, threads, debug):
         #     (merge_reads_csv, sample_name, sgID_dict, str(out_dir), debug)
         #     for merge_reads_csv, sample_name in merge_reads_csv_files
         # ])
-        results = parallel_parallel_process_with_timeout(
+        results = parallel_process_with_timeout(
             pool=p,
             func=summarize.sgID_info,
             args_list=[
