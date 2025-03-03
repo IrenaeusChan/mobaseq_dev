@@ -111,7 +111,7 @@ def cell_number_single(barcode_clean_txt, spike_ins, library_info, out_dir, plot
     library_info = pd.read_excel(library_info)
     rawdata.cell_number(barcode_clean_txt, sample_name, spike_ins, library_info, out_dir, plot, debug)
 
-def cell_number_batch(input_dir, spike_ins, library_info, out_dir, threads, plot, debug):
+def cell_number_batch(input_dir, spike_ins, library_info, out_dir, threads, plot, project_name, debug):
     barcode_clean_txt_files = tools.get_list_of_files(input_dir, "barcode_clean_txt", debug)
     spike_ins = tools.process_spike_ins(spike_ins, debug)
     library_info = pd.read_excel(library_info)
@@ -134,6 +134,7 @@ def cell_number_batch(input_dir, spike_ins, library_info, out_dir, threads, plot
     dfs = [res[1] for res in results]
     filtered_dfs = [res[2] for res in results]
     spike_counts_dfs = [res[3] for res in results]
+    figures = [res[4] for res in results]
     if not all(success):
         err_msg = f"ERROR: Some processes failed. Check the logs for more details. Exiting."
         log.logit(err_msg, color="red")
@@ -166,15 +167,16 @@ def cell_number_batch(input_dir, spike_ins, library_info, out_dir, threads, plot
         aggr_df['cellsPerRead'] = 1/aggr_df['mean_ReadingDepth']
         if plot: plotting.mean_rsq_distribution(aggr_df, out_dir)
         if plot: plotting.mean_reading_depth_distribution(aggr_df, out_dir)
-        
+
         log.logit(f"Results written to {out_dir}/combined_results/")
         out_dir = tools.ensure_abs_path(out_dir + "/combined_results/")
-        Rsq.to_csv(f"{out_dir}/RsqPerSample.csv", index=False)
-        unique_df.to_csv(f"{out_dir}/ReadingDepthPerSample.csv", index=False)
-        aggr_df.to_csv(f"{out_dir}/CountInfoPerSample.csv", index=False)
-        combined_df.to_csv(f"{out_dir}/UnfilteredSampleInfo.csv", index=False)
-        combined_filtered_df.to_csv(f"{out_dir}/FilteredSampleInfo.csv", index=False)
-        combined_spike_counts.to_csv(f"{out_dir}/SpikeInInfo.csv", index=False)
+        if plot: plotting.all_spike_ins(figures, project_name, out_dir)
+        Rsq.to_csv(f"{out_dir}/" + project_name + "_" + "RsqPerSample.csv", index=False)
+        unique_df.to_csv(f"{out_dir}/" + project_name + "_" + "ReadingDepthPerSample.csv", index=False)
+        aggr_df.to_csv(f"{out_dir}/" + project_name + "_" + "CountInfoPerSample.csv", index=False)
+        combined_df.to_csv(f"{out_dir}/" + project_name + "_" + "UnfilteredSampleInfo.csv", index=False)
+        combined_filtered_df.to_csv(f"{out_dir}/" + project_name + "_" + "FilteredSampleInfo.csv", index=False)
+        combined_spike_counts.to_csv(f"{out_dir}/" + project_name + "_" + "SpikeInInfo.csv", index=False)
 
 def sgID_qc_single(merge_reads_csv, sgid_file, out_dir, debug):
     sgID_dict = tools.process_sgid_file(sgid_file, debug)
@@ -423,7 +425,7 @@ def filter_significant_entries(df, value_threshold):
                 })
     return significant_entries
 
-def run_pipeline(input_dir, sgid_file, spike_ins, library_info, plot, out_dir, threads, debug):
+def run_pipeline(input_dir, sgid_file, spike_ins, library_info, plot, project_name, out_dir, threads, debug):
     log.logit(f"Reading in files from {input_dir}...")
     # This returns (fastq1, fastq2, sample_name)
     list_of_fastqs = tools.get_list_of_files(input_dir, "fastq", debug)
@@ -534,6 +536,9 @@ def run_pipeline(input_dir, sgid_file, spike_ins, library_info, plot, out_dir, t
         combined_num_barcodes.to_csv(os.path.join(out_dir, "barcodes_per_sgid.csv"), index=False)
         combined_rel_reads.to_csv(os.path.join(out_dir, "relative_reads_per_sgid.csv"), index=False)
         combined_rel_barcodes.to_csv(os.path.join(out_dir, "relative_barcodes_per_sgid.csv"), index=False)
+
+        # Plot the results
+        plotting.per_sgid(combined_total_reads, combined_num_barcodes, combined_rel_reads, combined_rel_barcodes, out_dir, True, debug)
     log.logit(f"Summarizing sgID information complete. Moving on to the next step...", color="green")
 
     # Mapped Reads
@@ -571,6 +576,9 @@ def run_pipeline(input_dir, sgid_file, spike_ins, library_info, plot, out_dir, t
         }
     )
     mapped_df.to_csv(f"{out_dir}/mapped_percentages.csv", index=False)
+
+    # Plot the results
+    plotting.mapped_reads(mapped_df, out_dir, debug)
     log.logit(f"Summarizing mapped reads complete. Moving on to the next step...", color="green")
 
     # Cell Counts
@@ -596,6 +604,7 @@ def run_pipeline(input_dir, sgid_file, spike_ins, library_info, plot, out_dir, t
     dfs = [res[1] for res in results]
     filtered_dfs = [res[2] for res in results]
     spike_counts_dfs = [res[3] for res in results]
+    figures = [res[4] for res in results]
     if not all(success):
         err_msg = f"ERROR: Some processes during Cell-Number Task failed. Check the logs for more details. Exiting."
         cell_count_files = tools.get_list_of_files(cell_number_out_dir, "cell_count", debug)
@@ -634,11 +643,12 @@ def run_pipeline(input_dir, sgid_file, spike_ins, library_info, plot, out_dir, t
         if plot: plotting.mean_reading_depth_distribution(aggr_df, out_dir)
         
         log.logit(f"Results written to {out_dir}")
-        Rsq.to_csv(f"{out_dir}/RsqPerSample.csv", index=False)
-        unique_df.to_csv(f"{out_dir}/ReadingDepthPerSample.csv", index=False)
-        aggr_df.to_csv(f"{out_dir}/CountInfoPerSample.csv", index=False)
-        combined_df.to_csv(f"{out_dir}/UnfilteredSampleInfo.csv", index=False)
-        combined_filtered_df.to_csv(f"{out_dir}/FilteredSampleInfo.csv", index=False)
-        combined_spike_counts.to_csv(f"{out_dir}/SpikeInInfo.csv", index=False)
+        if plot: plotting.all_spike_ins(figures, project_name, out_dir)
+        Rsq.to_csv(f"{out_dir}/" + project_name + "_" + "RsqPerSample.csv", index=False)
+        unique_df.to_csv(f"{out_dir}/" + project_name + "_" + "ReadingDepthPerSample.csv", index=False)
+        aggr_df.to_csv(f"{out_dir}/" + project_name + "_" + "CountInfoPerSample.csv", index=False)
+        combined_df.to_csv(f"{out_dir}/" + project_name + "_" + "UnfilteredSampleInfo.csv", index=False)
+        combined_filtered_df.to_csv(f"{out_dir}/" + project_name + "_" + "FilteredSampleInfo.csv", index=False)
+        combined_spike_counts.to_csv(f"{out_dir}/" + project_name + "_" + "SpikeInInfo.csv", index=False)
     log.logit(f"Calculating cell counts complete.", color="green")
         

@@ -41,7 +41,7 @@ def process():
 @click.option('--input_dir', '-i', type=click.Path(exists=True), required=False, help="Directory with all R1/R2 FASTQ files. Use this option for BATCH Processing")
 @click.option('--sample_name', '-s', type=click.STRING, required=False, help="Sample name")
 @click.option('--sgid_file', '-f', type=click.Path(exists=True), required=True, help="sgID Excel File")
-@click.option('--out_dir', '-o', type=click.Path(), required=True, help="Output directory to place CountRead results")
+@click.option('--out_dir', '-o', type=click.Path(), required=False, default="outputs", show_default=True, help="Output directory to place CountRead results")
 @click.option('--threads', '-t', type=click.INT, default=1, required=False, show_default=True, help="Number of threads to use for parallel processing")
 @click.option('--debug', '-d', is_flag=True, show_default=True, default=False, required=False, help="Print extra debugging output")
 def countreads(read_one, read_two, input_dir, sample_name, sgid_file, out_dir, threads, debug):
@@ -58,7 +58,7 @@ def countreads(read_one, read_two, input_dir, sample_name, sgid_file, out_dir, t
 @process.command('clean-barcodes', short_help="Clean barcodes from count-read files.")
 @click.option('--merge_reads_csv', '-m', type=click.Path(exists=True), required=False, help="Individual _MergeReadOut.csv file")
 @click.option('--input_dir', '-i', type=click.Path(exists=True), required=False, help="Input directory containing all processed CountRead files (_MergeReadOut.csv)")
-@click.option('--out_dir', '-o', type=click.Path(), required=True, help="Output directory to place cleaned results")
+@click.option('--out_dir', '-o', type=click.Path(), required=False, default="outputs", show_default=True, help="Output directory to place cleaned results")
 @click.option('--threads', '-t', type=click.INT, default=1, required=False, show_default=True, help="Number of threads to use for parallel processing")
 @click.option('--debug', '-d', is_flag=True, show_default=True, default=False, required=False, help="Print extra debugging output")
 def clean_barcodes(merge_reads_csv, input_dir, out_dir, threads, debug):
@@ -77,17 +77,18 @@ def clean_barcodes(merge_reads_csv, input_dir, out_dir, threads, debug):
 @click.option('--input_dir', '-i', type=click.Path(exists=True), required=False, help="Input directory containing all processed BarcodeClean files (_BarcodeClean.txt)")
 @click.option('--spike_ins', '-s', type=click.Path(exists=True), required=True, help="Spike-in Information Sheet")
 @click.option('--library_info', '-l', type=click.Path(exists=True), required=True, help="Counts of spike-ins")
-@click.option('--out_dir', '-o', type=click.Path(), required=True, help="Output directory to place estimated cell numbers")
+@click.option('--out_dir', '-o', type=click.Path(), required=False, default="outputs", show_default=True, help="Output directory to place estimated cell numbers")
 @click.option('--threads', '-t', type=click.INT, default=1, required=False, show_default=True, help="Number of threads to use for parallel processing")
 @click.option('--plot', '-p', is_flag=True, show_default=True, default=False, required=False, help="Add additional QC plots")
+@click.option('--project_name', '-n', type=click.STRING, required=False, default="MobaSeq", help="Project name for naming final files")
 @click.option('--debug', '-d', is_flag=True, show_default=True, default=False, required=False, help="Print extra debugging output")
-def cell_number(barcode_clean_txt, input_dir, spike_ins, library_info, out_dir, threads, plot, debug):
+def cell_number(barcode_clean_txt, input_dir, spike_ins, library_info, out_dir, threads, plot, project_name, debug):
     out_dir = tools.ensure_abs_path(out_dir)
     if barcode_clean_txt and not input_dir: # Single file processing
         handlers.cell_number_single(barcode_clean_txt, spike_ins, library_info, str(out_dir), plot, debug)
         log.logit(f"---> Successfully estimated cell number for file: {barcode_clean_txt}", color="green")
     elif input_dir and not barcode_clean_txt: # Batch processing
-        handlers.cell_number_batch(input_dir, spike_ins, library_info, str(out_dir), threads, plot, debug)
+        handlers.cell_number_batch(input_dir, spike_ins, library_info, str(out_dir), threads, plot, project_name, debug)
         log.logit(f"---> Successfully estimated cell number inside {input_dir}", color="green")
     else:
         raise click.UsageError("You must provide either --merge_reads_csv or --input_dir, but not both.")
@@ -96,7 +97,7 @@ def cell_number(barcode_clean_txt, input_dir, spike_ins, library_info, out_dir, 
 @click.option('--merge_reads_csv', '-m', type=click.Path(exists=True), required=False, help="Individual _MergeReadOut.csv file")
 @click.option('--input_dir', '-i', type=click.Path(exists=True), required=False, help="Input directory containing all processed CountRead files (_MergeReadOut.csv)")
 @click.option('--sgid_file', '-f', type=click.Path(exists=True), required=True, help="sgID Excel File")
-@click.option('--out_dir', '-o', type=click.Path(), required=True, help="Output directory to place summarized results")
+@click.option('--out_dir', '-o', type=click.Path(), required=False, default="outputs", show_default=True, help="Output directory to place summarized results")
 @click.option('--threads', '-t', type=click.INT, default=1, required=False, show_default=True, help="Number of threads to use for parallel processing")
 @click.option('--debug', '-d', is_flag=True, show_default=True, default=False, required=False, help="Print extra debugging output")
 def sgID_qc(merge_reads_csv, input_dir, sgid_file, out_dir, threads, debug):
@@ -114,7 +115,7 @@ def sgID_qc(merge_reads_csv, input_dir, sgid_file, out_dir, threads, debug):
 @click.option('--merge_reads_csv', '-m', type=click.Path(exists=True), required=False, help="Individual _MergeReadOut.csv file")
 @click.option('--input_dir', '-i', type=click.Path(exists=True), required=False, help="Input directory containing all processed CountRead files (_MergeReadOut.csv)")
 @click.option('--sgid_file', '-f', type=click.Path(exists=True), required=True, help="sgID Excel File")
-@click.option('--out_dir', '-o', type=click.Path(), required=True, help="Output directory to place summarized results")
+@click.option('--out_dir', '-o', type=click.Path(), required=False, default="outputs", show_default=True, help="Output directory to place summarized results")
 @click.option('--threads', '-t', type=click.INT, default=1, required=False, show_default=True, help="Number of threads to use for parallel processing")
 @click.option('--debug', '-d', is_flag=True, show_default=True, default=False, required=False, help="Print extra debugging output")
 def mapped_reads(merge_reads_csv, input_dir, sgid_file, out_dir, threads, debug):
@@ -137,7 +138,7 @@ def plot():
 
 @plot.command('mapped-reads', short_help="Plot mapped and unmapped reads.")
 @click.option('--mapped_percentages_csv', '-i', type=click.Path(exists=True), required=True, help="The _mapped_percentages.csv file to plot")
-@click.option('--out_dir', '-o', type=click.Path(), required=True, help="Output directory to place summarized results")
+@click.option('--out_dir', '-o', type=click.Path(), required=False, default="outputs", show_default=True, help="Output directory to place summarized results")
 @click.option('--debug', '-d', is_flag=True, show_default=True, default=False, required=False, help="Print extra debugging output")
 def plot_mapped_reads(mapped_percentages_csv, out_dir, debug):
     out_dir = tools.ensure_abs_path(out_dir) # Ensure out_dir is an absolute path
@@ -146,7 +147,7 @@ def plot_mapped_reads(mapped_percentages_csv, out_dir, debug):
 
 @plot.command('spike-ins', short_help="Plot spike-in counts vs. expected cell numbers.")
 @click.option('--spike_count', '-s', type=click.Path(exists=True), required=True, help="The _SpikeInCounts.txt file to plot")
-@click.option('--out_dir', '-o', type=click.Path(), required=True, help="Output directory to place summarized results")
+@click.option('--out_dir', '-o', type=click.Path(), required=False, default="outputs", show_default=True, help="Output directory to place summarized results")
 @click.option('--debug', '-d', is_flag=True, show_default=True, default=False, required=False, help="Print extra debugging output")
 def plot_spike_ins(spike_count, out_dir, debug):
     handlers.plot_spike_ins(spike_count, out_dir, debug)
@@ -154,7 +155,7 @@ def plot_spike_ins(spike_count, out_dir, debug):
 
 @plot.command('rsq-per-sample', short_help="Plot RSQ per sample .")
 @click.option('--rsq', '-r', type=click.Path(exists=True), required=True, help="The RsqPerSample.csv file to plot")
-@click.option('--out_dir', '-o', type=click.Path(), required=True, help="Output directory to place summarized results")
+@click.option('--out_dir', '-o', type=click.Path(), required=False, default="outputs", show_default=True, help="Output directory to place summarized results")
 @click.option('--debug', '-d', is_flag=True, show_default=True, default=False, required=False, help="Print extra debugging output")
 def plot_rsq_per_sample(rsq, out_dir, debug):
     handlers.plot_rsq_per_sample(rsq, out_dir, debug)
@@ -162,7 +163,7 @@ def plot_rsq_per_sample(rsq, out_dir, debug):
 
 @plot.command('read-depth-per-sample', short_help="Plot reading depth per sample.")
 @click.option('--reading_depth', '-r', type=click.Path(exists=True), required=True, help="The ReadingDepthPerSample.csv file to plot")
-@click.option('--out_dir', '-o', type=click.Path(), required=True, help="Output directory to place summarized results")
+@click.option('--out_dir', '-o', type=click.Path(), required=False, default="outputs", show_default=True, help="Output directory to place summarized results")
 @click.option('--debug', '-d', is_flag=True, show_default=True, default=False, required=False, help="Print extra debugging output")
 def plot_read_depth_per_sample(reading_depth, out_dir, debug):
     handlers.plot_read_depth_per_sample(reading_depth, out_dir, debug)
@@ -170,7 +171,7 @@ def plot_read_depth_per_sample(reading_depth, out_dir, debug):
 
 @plot.command('read-depth-distribution', short_help="Plot mean reading depth distribution.")
 @click.option('--count_info', '-c', type=click.Path(exists=True), required=True, help="The CountInfoPerSample.csv file to plot")
-@click.option('--out_dir', '-o', type=click.Path(), required=True, help="Output directory to place summarized results")
+@click.option('--out_dir', '-o', type=click.Path(), required=False, default="outputs", show_default=True, help="Output directory to place summarized results")
 @click.option('--debug', '-d', is_flag=True, show_default=True, default=False, required=False, help="Print extra debugging output")
 def plot_mean_read_depth_per_sample(count_info, out_dir, debug):
     handlers.plot_mean_read_depth_distribution(count_info, out_dir, debug)
@@ -178,7 +179,7 @@ def plot_mean_read_depth_per_sample(count_info, out_dir, debug):
 
 @plot.command('rsq-distribution', short_help="Plot mean R² distribution.")
 @click.option('--count_info', '-c', type=click.Path(exists=True), required=True, help="The CountInfoPerSample.csv file to plot")
-@click.option('--out_dir', '-o', type=click.Path(), required=True, help="Output directory to place summarized results")
+@click.option('--out_dir', '-o', type=click.Path(), required=False, default="outputs", show_default=True, help="Output directory to place summarized results")
 @click.option('--debug', '-d', is_flag=True, show_default=True, default=False, required=False, help="Print extra debugging output")
 def plot_rsq_of_cell_count_distribution(count_info, out_dir, debug):
     handlers.plot_mean_rsq_distribution(count_info, out_dir, debug)
@@ -186,7 +187,7 @@ def plot_rsq_of_cell_count_distribution(count_info, out_dir, debug):
 
 @plot.command('per-sgID', short_help="Plot per sgID plots.")
 @click.option('--sgid_csv_dir', '-i', type=click.Path(exists=True), required=True, help="The directory where the four _per_sgID.csv files are located")
-@click.option('--out_dir', '-o', type=click.Path(), required=True, help="Output directory to place summarized results")
+@click.option('--out_dir', '-o', type=click.Path(), required=False, default="outputs", show_default=True, help="Output directory to place summarized results")
 @click.option('--no_dummy', '-nd', is_flag=True, show_default=True, default=False, required=False, help="Do not include dummy sgIDs in the plots")
 @click.option('--debug', '-d', is_flag=True, show_default=True, default=False, required=False, help="Print extra debugging output")
 def plot_per_sgid(sgid_csv_dir, out_dir, no_dummy, debug):
@@ -205,7 +206,7 @@ def legacy():
 @click.option('--input_dir', '-i', type=click.Path(exists=True), required=False, help="Directory with all R1/R2 FASTQ files. Use this option for BATCH Processing")
 @click.option('--sample_name', '-s', type=click.STRING, required=False, help="Sample name")
 @click.option('--sgid_file', '-f', type=click.Path(exists=True), required=True, help="sgID Excel File")
-@click.option('--out_dir', '-o', type=click.Path(), required=True, help="Output directory to place CountRead results")
+@click.option('--out_dir', '-o', type=click.Path(), required=False, default="outputs", show_default=True, help="Output directory to place CountRead results")
 @click.option('--debug', '-d', is_flag=True, show_default=True, default=False, required=False, help="Print extra debugging output")
 def countreads(read_one, read_two, input_dir, sample_name, sgid_file, out_dir, debug):
     import mobaseq.process.legacy as legacy
@@ -232,7 +233,7 @@ def countreads(read_one, read_two, input_dir, sample_name, sgid_file, out_dir, d
     
 @legacy.command('clean-barcodes', short_help="Clean barcodes from count-read files.")
 @click.option('--input_dir', '-i', type=click.Path(exists=True), required=True, help="Input directory containing all processed CountRead files (_MergeReadOut.csv)")
-@click.option('--out_dir', '-o', type=click.Path(), required=True, help="Output directory to place cleaned results")
+@click.option('--out_dir', '-o', type=click.Path(), required=False, default="outputs", show_default=True, help="Output directory to place cleaned results")
 @click.option('--debug', '-d', is_flag=True, show_default=True, default=False, required=False, help="Print extra debugging output")
 def clean_barcodes(input_dir, out_dir, debug):
     import mobaseq.process.legacy as legacy
@@ -246,7 +247,7 @@ def clean_barcodes(input_dir, out_dir, debug):
 @legacy.command('sgID-qc', short_help="Summarize basic information from raw count files.")
 @click.option('--input_dir', '-i', type=click.Path(exists=True), required=True, help="Input directory containing all processed CountRead files (_MergeReadOut.csv)")
 @click.option('--sgid_file', '-f', type=click.Path(exists=True), required=True, help="sgID Excel File")
-@click.option('--out_dir', '-o', type=click.Path(), required=True, help="Output directory to place summarized results")
+@click.option('--out_dir', '-o', type=click.Path(), required=False, default="outputs", show_default=True, help="Output directory to place summarized results")
 @click.option('--debug', '-d', is_flag=True, show_default=True, default=False, required=False, help="Print extra debugging output")
 def summarize(input_dir, sgid_file, out_dir, debug):
     import mobaseq.process.legacy as legacy
@@ -261,7 +262,7 @@ def summarize(input_dir, sgid_file, out_dir, debug):
 @legacy.command('plot-mapped-and-unmapped', short_help="Plot mapped and unmapped reads.")
 @click.option('--input_dir', '-i', type=click.Path(exists=True), required=True, help="Input directory containing all processed CountRead files (_MergeReadOut.csv)")
 @click.option('--sgid_file', '-f', type=click.Path(exists=True), required=True, help="sgID Excel File")
-@click.option('--out_dir', '-o', type=click.Path(), required=True, help="Output directory to place summarized results")
+@click.option('--out_dir', '-o', type=click.Path(), required=False, default="outputs", show_default=True, help="Output directory to place summarized results")
 @click.option('--debug', '-d', is_flag=True, show_default=True, default=False, required=False, help="Print extra debugging output")
 def plot_mapped_and_unmapped(input_dir, sgid_file, out_dir, debug):
     import mobaseq.process.legacy as legacy
@@ -279,7 +280,7 @@ def plot_mapped_and_unmapped(input_dir, sgid_file, out_dir, debug):
 @click.option('--rel_reads_csv', '-rr', type=click.Path(exists=True), required=True, help="Relative reads CSV file")
 @click.option('--rel_barcodes_csv', '-rb', type=click.Path(exists=True), required=True, help="Relative barcodes CSV file")
 @click.option('--sgid_file', '-f', type=click.Path(exists=True), required=True, help="sgID Excel File")
-@click.option('--out_dir', '-o', type=click.Path(), required=True, help="Output directory to place summarized results")
+@click.option('--out_dir', '-o', type=click.Path(),required=False, default="outputs", show_default=True, help="Output directory to place summarized results")
 @click.option('--no_dummy', '-nd', is_flag=True, show_default=True, default=False, required=False, help="Do not include dummy sgIDs in the plots")
 @click.option('--debug', '-d', is_flag=True, show_default=True, default=False, required=False, help="Print extra debugging output")
 def plot_per_sgid(reads_csv, barcodes_csv, rel_reads_csv, rel_barcodes_csv, sgid_file, out_dir, no_dummy, debug):
@@ -295,16 +296,25 @@ cli.add_command(legacy)
 
 @cli.command('run', short_help="Runs the entire pipeline from raw FASTQ files to generating the final FilteredSampleInfo.csv")
 @click.option('--input_dir', '-i', type=click.Path(exists=True), required=False, help="Directory with all R1/R2 FASTQ files")
+@click.option('--input_files', '-if', type=click.Path(exists=True), required=False, help="Directory containing sgid_file, spike_ins, and library_info")
 @click.option('--sgid_file', '-f', type=click.Path(exists=True), required=True, help="sgID Excel File")
 @click.option('--spike_ins', '-s', type=click.Path(exists=True), required=True, help="Spike-in Information Sheet")
 @click.option('--library_info', '-l', type=click.Path(exists=True), required=True, help="Counts of spike-ins")
 @click.option('--plot', '-p', is_flag=True, show_default=True, default=False, required=False, help="Add additional QC plots")
-@click.option('--out_dir', '-o', type=click.Path(), required=True, help="Output directory to place CountRead results")
+@click.option('--out_dir', '-o', type=click.Path(), required=False, default="outputs", show_default=True, help="Output directory to place CountRead results")
+@click.option('--project_name', '-n', type=click.STRING, required=False, default="MobaSeq", help="Project name for naming final files")
 @click.option('--threads', '-t', type=click.INT, default=1, required=False, show_default=True, help="Number of threads to use for parallel processing")
 @click.option('--debug', '-d', is_flag=True, show_default=True, default=False, required=False, help="Print extra debugging output")
-def run_pipeline(input_dir, sgid_file, spike_ins, library_info, plot, out_dir, threads, debug):
+def run_pipeline(input_dir, input_files, sgid_file, spike_ins, library_info, plot, project_name, out_dir, threads, debug):
     """Command to run the entire pipeline from start to finish."""
     log.logit(f"Starting MOBASeq Analysis Pipeline...", color="green")
     out_dir = tools.ensure_abs_path(out_dir)
-    handlers.run_pipeline(input_dir, sgid_file, spike_ins, library_info, plot, str(out_dir), threads, debug)
+    if (sgid_file and spike_ins and library_info) and not input_files:
+        handlers.run_pipeline(input_dir, sgid_file, spike_ins, library_info, plot, project_name, str(out_dir), threads, debug)
+    elif input_files and not (sgid_file or spike_ins or library_info):
+        sgid_file, spike_ins, library_info = tools.process_input_files(input_files, debug)
+        handlers.run_pipeline(input_dir, sgid_file, spike_ins, library_info, plot, project_name, str(out_dir), threads, debug)
+    else:
+        raise click.UsageError("You must provide either --input_dir or --input_files.")
+    
     log.logit(f"MOBASeq Analysis Pipeline Complete!", color="green")

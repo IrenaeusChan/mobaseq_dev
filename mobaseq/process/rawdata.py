@@ -367,7 +367,7 @@ def cell_number(barcode_clean_txt, sample_name, spike_ins, library_info, out_dir
                 if debug: 
                     log.logit(f"SciKit-Learn Linear Regression Model: {slope}, {rsq}")
                     print(spike_count[['Sample_ID', 'count', 'name', 'expected_cellnum', 'z_scores']])
-                if plot: plotting.spike_ins(spike_count, slope, rsq, "red" if rsq < 0.9 else "black", sample_name, out_dir)
+                if plot: figure = plotting.spike_ins(spike_count, slope, rsq, "red" if rsq < 0.9 else "black", sample_name, out_dir)
                 # If the R² value is less than 0.9, remove the Spike-in with the highest z-score
                 if rsq < 0.9:
                     log.logit(f"The R² value is {rsq}, trying to remove the Spike-in with the highest z-score...")
@@ -377,7 +377,7 @@ def cell_number(barcode_clean_txt, sample_name, spike_ins, library_info, out_dir
                     if debug: 
                         log.logit(f"SciKit-Learn Linear Regression Model: {slope_redo}, {rsq_redo}")
                         print(spike_count_redo[['Sample_ID', 'count', 'name', 'expected_cellnum', 'z_scores']])
-                    if plot: plotting.spike_ins(spike_count_redo, slope_redo, rsq_redo, "red" if rsq < 0.9 else "black", sample_name, out_dir, True)
+                    if plot: figure = plotting.spike_ins(spike_count_redo, slope_redo, rsq_redo, "red" if rsq < 0.9 else "black", sample_name, out_dir, True)
                     if rsq_redo > rsq:
                         spike_count = spike_count_redo
                         slope = slope_redo
@@ -427,11 +427,11 @@ def cell_number(barcode_clean_txt, sample_name, spike_ins, library_info, out_dir
             filtered_df = filtered_df[~filtered_df['distance'].isna()]
             filtered_df.to_csv(out_dir + "/" + sample_name + "_FilteredSampleInfo.txt", index=False, sep='\t', na_rep = 'NA')
             spike_count.to_csv(out_dir + "/" + sample_name + "_SpikeInInfo.txt", index=False, sep='\t', na_rep = 'NA')
-            return True, df, filtered_df, spike_count
+            return True, df, filtered_df, spike_count, figure
     except TimeoutError as te:
         log.logit(f"{sample_name} - TimeoutError: {te}", color="red")
-        return False, None, None, None
+        return False, None, None, None, None
     except Exception as e:
         log.logit(f"Error occurred while processing {sample_name}: {str(e)}", color="red")
         if debug: log.logit(traceback.format_exc())
-        return False, None, None, None
+        return False, None, None, None, None

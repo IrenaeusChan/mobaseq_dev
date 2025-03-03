@@ -3,9 +3,9 @@
 ## Installation
 
 ```bash
-pip install git+https://github.com/RuiTang-2024/MOBASeq-Toolkit.git@main
+sudo pip3 install git+https://github.com/RuiTang-2024/MOBASeq-Toolkit.git@main
 
-pip install git+https://github.com/IrenaeusChan/mobaseq_dev.git@main
+sudo pip3 install git+https://github.com/IrenaeusChan/mobaseq_dev.git@main
 ```
 
 OR

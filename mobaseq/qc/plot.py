@@ -4,7 +4,10 @@ import mobaseq.process.tools as tools
 import mobaseq.qc.summarize as summarize
 import numpy as np
 import pandas as pd
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+from matplotlib.backends.backend_pdf import PdfPages
 import seaborn as sns
 import multiprocessing as mp
 import regex as re
@@ -27,7 +30,11 @@ def mapped_reads(mapped_percentages_csv, out_dir, debug):
     log.logit(f"Plotting % mapped reads", color = "green")
     df = pd.read_csv(mapped_percentages_csv)
     # Plotting
-    plt.figure(figsize=(12, 10))
+    n_samples = len(df["Sample"])
+    width = max(12, 0.5 * n_samples)  # Minimum 12, or 0.5 per sample
+    
+    # Plotting with dynamic width
+    plt.figure(figsize=(width, 10))
     bar_width = 0.35
     mapped_bar = plt.bar(df["Sample"], df["Mapped %"], label="Mapped %", color="blue", alpha=0.7, width=bar_width)
     # Use the bottom parameter to stack the bars, in this case, the Unmapped % bars will be stacked on top of the Mapped % bars
@@ -79,9 +86,9 @@ def spike_ins(spike_count, slope, rsq, plot_color, sample_name, out_dir, redraw 
     
     # Set title and labels
     if redraw:
-        ax.set_title(f'Spike-in Counts vs. Expected Cell Numbers - {sample_name} - After Dropping Highest Z-Score')
+        ax.set_title(f'{sample_name} - After Dropping Highest Z-Score')
     else:
-        ax.set_title(f'Spike-in Counts vs. Expected Cell Numbers - {sample_name}')
+        ax.set_title(f'{sample_name}')
     ax.set_xlabel('Spike-in Counts')
     ax.set_ylabel('Expected Cell Numbers')
         
@@ -92,12 +99,75 @@ def spike_ins(spike_count, slope, rsq, plot_color, sample_name, out_dir, redraw 
         plt.savefig(f"{out_dir}/{sample_name}_R-SquaredPlot_Redraw.png")
     else:
         plt.savefig(f"{out_dir}/{sample_name}_R-SquaredPlot.png")
-    return fig
+    plt.close(fig)
+    return fig.get_figure()
+
+def all_spike_ins(figures, project_name, out_dir):
+    log.logit(f"Combining all Spike-In plots into a single PDF...", color="green")
+    pdf_filename = os.path.join(out_dir, f"{project_name}_All_R-SquaredPlots.pdf")
+    
+    with PdfPages(pdf_filename) as pdf:
+        # Calculate grid dimensions
+        n_figs = len(figures)
+        n_cols = int(np.ceil(np.sqrt(n_figs)))
+        n_rows = int(np.ceil(n_figs / n_cols))
+        
+        # Create page with subplots
+        #fig, axes = plt.subplots(n_rows, n_cols, figsize=(n_cols*3, n_rows*3)) 
+        fig, axes = plt.subplots(n_rows, n_cols, 
+                        figsize=(n_cols*5, n_rows*5),
+                        gridspec_kw={'wspace': 0.3, 
+                                    'hspace': 0.4,
+                                    'top': 0.95,
+                                    'bottom': 0.05,
+                                    'left': 0.05,
+                                    'right': 0.95})
+        axes = axes.flatten() if n_rows * n_cols > 1 else [axes]
+        
+        # Copy each figure to subplot
+        for idx, fig_orig in enumerate(figures):
+            if idx < n_figs:
+                ax_orig = fig_orig.axes[0]
+                
+                # Copy scatter points
+                for collection in ax_orig.collections:
+                    axes[idx].scatter(collection.get_offsets()[:,0], 
+                                    collection.get_offsets()[:,1],
+                                    color=collection.get_facecolor())
+                
+                # Copy lines (regression line)
+                for line in ax_orig.lines:
+                    axes[idx].plot(line.get_xdata(), line.get_ydata())
+                
+                # Copy text elements
+                for text in ax_orig.texts:
+                    axes[idx].text(text.get_position()[0], 
+                                 text.get_position()[1],
+                                 text.get_text())
+                
+                # Copy properties
+                axes[idx].set_title(ax_orig.get_title())
+                axes[idx].set_xlabel(ax_orig.get_xlabel())
+                axes[idx].set_ylabel(ax_orig.get_ylabel())
+                axes[idx].grid(True)
+        
+        # Hide empty subplots
+        for idx in range(n_figs, len(axes)):
+            axes[idx].axis('off')
+            
+        pdf.savefig(fig)
+        plt.close()
+    
+    log.logit(f"PDF saved to {pdf_filename}")
 
 def rsq_per_sample(Rsq, out_dir):
     log.logit(f"Plotting R² values per sample", color = "green")
     # Plotting
-    plt.figure(figsize=(12, 10))
+    n_samples = len(Rsq["Sample_ID"])
+    height = max(10, 0.3 * n_samples)  # Minimum 10, or 0.3 per sample
+    
+    # Plotting with dynamic height
+    plt.figure(figsize=(12, height))
     plt.barh(Rsq["Sample_ID"], Rsq["Spike_Rsq"], color="blue", alpha=0.7, height=0.9)
     plt.axvline(x=0.9, color='red', linestyle='--', linewidth=1)
     
@@ -112,7 +182,11 @@ def rsq_per_sample(Rsq, out_dir):
 def reading_depth_per_sample(df, out_dir):
     log.logit(f"Plotting reading depth per sample", color = "green")
     # Plotting
-    plt.figure(figsize=(12, 10))
+    n_samples = len(df["Sample_ID"])
+    height = max(10, 0.3 * n_samples)  # Minimum 10, or 0.3 per sample
+    
+    # Plotting with dynamic height
+    plt.figure(figsize=(12, height))
     plt.barh(df["Sample_ID"], df["reading_depth"], color="blue", alpha=0.7, height=0.9)
     plt.axvline(x=0.003, color='red', linestyle='--', linewidth=1)
 
@@ -258,3 +332,4 @@ def per_sgid(total_reads_df, unique_barcodes_df, relative_reads_df, relative_bar
     suffix = '_noDummy' if no_dummy else ''
     save_name = os.path.join(out_dir, f'sgID_distribution_with_relative_reads_and_barcodes_filtered{suffix}.pdf')
     plt.savefig(save_name, format='pdf', bbox_inches='tight')
+    return fig

@@ -266,3 +266,29 @@ def get_list_of_cell_count(input_dir, debug):
     for unfiltered, filtered, spike_count in zip(unfiltered_sample_info_files, filtered_sample_info_files, spike_count_files):
         files_and_sample_names.append(((unfiltered, filtered, spike_count), get_sample_name(spike_count, "spike_count", debug)))
     return files_and_sample_names
+
+def process_input_files(input_files_dir, debug):
+    # Look for sgid_file, spike_ins, and library_info
+    sgid_file = glob.glob(os.path.join(input_files_dir, "*sgID*.xls*"))
+    spike_ins = glob.glob(os.path.join(input_files_dir, "B*key*.csv"))
+    library_info = glob.glob(os.path.join(input_files_dir, "CountingTable.xls*"))
+    # Check if the list is empty
+    if len(sgid_file) == 0:
+        err_msg = f"ERROR: No sgID file found in {input_files_dir}. Exiting."
+        log.logit(err_msg, color="red")
+        sys.exit(f"[err] {err_msg}")
+    if len(spike_ins) == 0:
+        err_msg = f"ERROR: No spike-in file found in {input_files_dir}. Exiting."
+        log.logit(err_msg, color="red")
+        sys.exit(f"[err] {err_msg}")
+    if len(library_info) == 0:
+        err_msg = f"ERROR: No library information file found in {input_files_dir}. Exiting."
+        log.logit(err_msg, color="red")
+        sys.exit(f"[err] {err_msg}")
+    sgid_file = sgid_file[0]
+    spike_ins = spike_ins[0]
+    library_info = library_info[0]
+    log.logit(f"Found sgID file: {sgid_file}")
+    log.logit(f"Found spike-in file: {spike_ins}")
+    log.logit(f"Found library information file: {library_info}")
+    return sgid_file, spike_ins, library_info
