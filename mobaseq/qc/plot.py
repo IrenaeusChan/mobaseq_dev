@@ -26,18 +26,18 @@ def sort_key(key):
         return (tissue_rank, number)  # Sort by tissue, then by number
     return (99, 99999)  # Default sorting for unexpected values
 
-def mapped_reads(mapped_percentages_csv, out_dir, debug):
+def mapped_reads(mapped_df, out_dir, debug):
     log.logit(f"Plotting % mapped reads", color = "green")
     # Plotting
-    n_samples = len(df["Sample"])
+    n_samples = len(mapped_df["Sample"])
     width = max(12, 0.5 * n_samples)  # Minimum 12, or 0.5 per sample
     
     # Plotting with dynamic width
     plt.figure(figsize=(width, 10))
     bar_width = 0.35
-    mapped_bar = plt.bar(df["Sample"], df["Mapped %"], label="Mapped %", color="blue", alpha=0.7, width=bar_width)
+    mapped_bar = plt.bar(mapped_df["Sample"], mapped_df["Mapped %"], label="Mapped %", color="blue", alpha=0.7, width=bar_width)
     # Use the bottom parameter to stack the bars, in this case, the Unmapped % bars will be stacked on top of the Mapped % bars
-    unmapped_bar = plt.bar(df["Sample"], df["Unmapped %"], label="Unmapped %", color="red", alpha=0.7, bottom=df["Mapped %"], width=bar_width)
+    unmapped_bar = plt.bar(mapped_df["Sample"], mapped_df["Unmapped %"], label="Unmapped %", color="red", alpha=0.7, bottom=mapped_df["Mapped %"], width=bar_width)
     # Outline bars with mapped percentage under 30% in red
     for bar in mapped_bar:
         if bar.get_height() < 30:
