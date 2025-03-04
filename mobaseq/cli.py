@@ -142,7 +142,7 @@ def plot():
 @click.option('--debug', '-d', is_flag=True, show_default=True, default=False, required=False, help="Print extra debugging output")
 def plot_mapped_reads(mapped_percentages_csv, out_dir, debug):
     out_dir = tools.ensure_abs_path(out_dir) # Ensure out_dir is an absolute path
-    plotting.mapped_reads(mapped_percentages_csv, str(out_dir), debug)
+    handlers.plot_mapped_reads(mapped_percentages_csv, out_dir, debug)
     log.logit(f"---> Successfully plotted mapped and unmapped reads. Plot can be found: {out_dir}/mapped_percentages.png", color="green")
 
 @plot.command('spike-ins', short_help="Plot spike-in counts vs. expected cell numbers.")

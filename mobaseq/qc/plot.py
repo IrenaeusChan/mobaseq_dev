@@ -28,7 +28,6 @@ def sort_key(key):
 
 def mapped_reads(mapped_percentages_csv, out_dir, debug):
     log.logit(f"Plotting % mapped reads", color = "green")
-    df = pd.read_csv(mapped_percentages_csv)
     # Plotting
     n_samples = len(df["Sample"])
     width = max(12, 0.5 * n_samples)  # Minimum 12, or 0.5 per sample
@@ -129,15 +128,22 @@ def all_spike_ins(figures, project_name, out_dir):
             if idx < n_figs:
                 ax_orig = fig_orig.axes[0]
                 
-                # Copy scatter points
+                # Copy scatter points with original colors
                 for collection in ax_orig.collections:
+                    color = collection.get_facecolor()
+                    # If multiple colors, use first one
+                    color = color[0] if len(color.shape) > 1 else color
                     axes[idx].scatter(collection.get_offsets()[:,0], 
                                     collection.get_offsets()[:,1],
-                                    color=collection.get_facecolor())
+                                    color=color,
+                                    alpha=collection.get_alpha())
                 
-                # Copy lines (regression line)
+                # Copy lines with original colors
                 for line in ax_orig.lines:
-                    axes[idx].plot(line.get_xdata(), line.get_ydata())
+                    axes[idx].plot(line.get_xdata(), 
+                                 line.get_ydata(),
+                                 color=line.get_color(),
+                                 linestyle=line.get_linestyle())
                 
                 # Copy text elements
                 for text in ax_orig.texts:

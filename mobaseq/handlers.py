@@ -319,6 +319,11 @@ def plot_mean_rsq_distribution(aggr_df, out_dir, debug):
     aggr_df = pd.read_csv(aggr_df)
     plotting.mean_rsq_distribution(aggr_df, str(out_dir))
 
+def plot_mapped_reads(mapped_percentages, out_dir, debug):
+    out_dir = tools.ensure_abs_path(out_dir)
+    mapped_percentages = pd.read_csv(mapped_percentages)
+    plotting.mapped_reads(mapped_percentages, str(out_dir))
+
 def check_sgid_files(sgID_csv_dir):
     required_files = [
         'total_reads_per_sgid.csv',
