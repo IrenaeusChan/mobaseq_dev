@@ -3,6 +3,7 @@ import multiprocessing as mp
 import pandas as pd
 import numpy as np
 import traceback
+import json
 import mobaseq.process.tools as tools
 import mobaseq.process.rawdata as rawdata
 import mobaseq.qc.summarize as summarize
@@ -431,6 +432,18 @@ def filter_significant_entries(df, value_threshold):
     return significant_entries
 
 def run_pipeline(input_dir, sgid_file, spike_ins, library_info, plot, project_name, out_dir, threads, debug):
+    # Create/read checkpoint file
+    checkpoint_file = os.path.join(out_dir, f"{project_name}_checkpoint.json")
+    checkpoints = {}
+    if os.path.exists(checkpoint_file):
+        with open(checkpoint_file, 'r') as f:
+            checkpoints = json.load(f)
+
+    def update_checkpoint(stage):
+        checkpoints[stage] = True
+        with open(checkpoint_file, 'w') as f:
+            json.dump(checkpoints, f)
+
     log.logit(f"Reading in files from {input_dir}...")
     # This returns (fastq1, fastq2, sample_name)
     list_of_fastqs = tools.get_list_of_files(input_dir, "fastq", debug)
@@ -445,215 +458,238 @@ def run_pipeline(input_dir, sgid_file, spike_ins, library_info, plot, project_na
     library_info = pd.read_excel(library_info)
 
     # Count Reads
-    log.logit(f"Counting reads for all samples...", color="green")
-    count_reads_out_dir = out_dir + "/MergeReadOutFiles"
-    count_reads_out_dir = tools.ensure_abs_path(count_reads_out_dir)
-    with mp.Pool(threads) as p:
-        # success = p.starmap(rawdata.countreads, [
-        #     (fastq1, fastq2, sample_name, sgID_dict, min_length, max_length, all_start_with_G, str(count_reads_out_dir), debug)
-        #     for fastq1, fastq2, sample_name in list_of_fastqs
-        # ])
-        success = parallel_process_with_timeout(
-            pool=p,
-            func=rawdata.countreads,
-            args_list=[
-                (fastq1, fastq2, sample_name, sgID_dict, min_length, max_length, all_start_with_G, str(count_reads_out_dir), debug)
-                for fastq1, fastq2, sample_name in list_of_fastqs
-            ],
-            timeout=1800
-        )
-    if not all(success):
-        err_msg = f"ERROR: Some processes during Count-Reads Task failed. Check the logs for more details. Exiting."
-        merge_reads_csv = tools.get_list_of_files(count_reads_out_dir, "merge_reads_csv", debug)
-        finished_samples = [sample_name for _, sample_name in merge_reads_csv]
-        failed_samples = [sample_name for sample_name in sample_names if sample_name not in finished_samples]
-        log.logit(f"Failed samples: {failed_samples}", color="red")
-        log.logit(err_msg, color="red")
-        sys.exit(f"[err] {err_msg}")
-    log.logit(f"Counting reads complete. Moving on to the next step...", color="green")
+    if not checkpoints.get('count_reads', False):    
+        log.logit(f"Counting reads for all samples...", color="green")
+        count_reads_out_dir = out_dir + "/MergeReadOutFiles"
+        count_reads_out_dir = tools.ensure_abs_path(count_reads_out_dir)
+        with mp.Pool(threads) as p:
+            # success = p.starmap(rawdata.countreads, [
+            #     (fastq1, fastq2, sample_name, sgID_dict, min_length, max_length, all_start_with_G, str(count_reads_out_dir), debug)
+            #     for fastq1, fastq2, sample_name in list_of_fastqs
+            # ])
+            success = parallel_process_with_timeout(
+                pool=p,
+                func=rawdata.countreads,
+                args_list=[
+                    (fastq1, fastq2, sample_name, sgID_dict, min_length, max_length, all_start_with_G, str(count_reads_out_dir), debug)
+                    for fastq1, fastq2, sample_name in list_of_fastqs
+                ],
+                timeout=1800
+            )
+        if not all(success):
+            err_msg = f"ERROR: Some processes during Count-Reads Task failed. Check the logs for more details. Exiting."
+            merge_reads_csv = tools.get_list_of_files(count_reads_out_dir, "merge_reads_csv", debug)
+            finished_samples = [sample_name for _, sample_name in merge_reads_csv]
+            failed_samples = [sample_name for sample_name in sample_names if sample_name not in finished_samples]
+            log.logit(f"Failed samples: {failed_samples}", color="red")
+            log.logit(err_msg, color="red")
+            sys.exit(f"[err] {err_msg}")
+        log.logit(f"Counting reads complete. Moving on to the next step...", color="green")
+        update_checkpoint('count_reads')
+    else:
+        log.logit(f"Count Reads already completed. Skipping to the next step...", color="green")
 
     # Clean Barcodes
-    log.logit(f"Cleaning barcodes for all samples...", color="green")
-    merge_reads_csv_files = tools.get_list_of_files(count_reads_out_dir, "merge_reads_csv", debug)
-    clean_barcodes_out_dir = out_dir + "/BarcodeCleanOutFiles"
-    clean_barcodes_out_dir = tools.ensure_abs_path(clean_barcodes_out_dir)
-    with mp.Pool(threads) as p:
-        # success = p.starmap(rawdata.clean_barcodes, [
-        #     (merge_read_csv, sample_name, 1, str(clean_barcodes_out_dir), debug) for merge_read_csv, sample_name in merge_reads_csv_files
-        # ])
-        success = parallel_process_with_timeout(
-            pool=p,
-            func=rawdata.clean_barcodes,
-            args_list=[
-                (merge_read_csv, sample_name, 1, str(clean_barcodes_out_dir), debug) for merge_read_csv, sample_name in merge_reads_csv_files
-            ],
-            timeout=1800
-        )
-    if not all(success):
-        err_msg = f"ERROR: Some processes during Clean-Barcodes Task failed. Check the logs for more details. Exiting."
-        barcode_clean_txt_files = tools.get_list_of_files(clean_barcodes_out_dir, "barcode_clean_txt", debug)
-        finished_samples = [sample_name for _, sample_name in barcode_clean_txt_files]
-        failed_samples = [sample_name for sample_name in sample_names if sample_name not in finished_samples]
-        log.logit(f"Failed samples: {failed_samples}", color="red")
-        log.logit(err_msg, color="red")
-        sys.exit(f"[err] {err_msg}")
-    log.logit(f"Cleaning barcodes complete. Moving on to the next step...", color="green")
+    if not checkpoints.get('clean_barcodes', False):
+        log.logit(f"Cleaning barcodes for all samples...", color="green")
+        merge_reads_csv_files = tools.get_list_of_files(count_reads_out_dir, "merge_reads_csv", debug)
+        clean_barcodes_out_dir = out_dir + "/BarcodeCleanOutFiles"
+        clean_barcodes_out_dir = tools.ensure_abs_path(clean_barcodes_out_dir)
+        with mp.Pool(threads) as p:
+            # success = p.starmap(rawdata.clean_barcodes, [
+            #     (merge_read_csv, sample_name, 1, str(clean_barcodes_out_dir), debug) for merge_read_csv, sample_name in merge_reads_csv_files
+            # ])
+            success = parallel_process_with_timeout(
+                pool=p,
+                func=rawdata.clean_barcodes,
+                args_list=[
+                    (merge_read_csv, sample_name, 1, str(clean_barcodes_out_dir), debug) for merge_read_csv, sample_name in merge_reads_csv_files
+                ],
+                timeout=1800
+            )
+        if not all(success):
+            err_msg = f"ERROR: Some processes during Clean-Barcodes Task failed. Check the logs for more details. Exiting."
+            barcode_clean_txt_files = tools.get_list_of_files(clean_barcodes_out_dir, "barcode_clean_txt", debug)
+            finished_samples = [sample_name for _, sample_name in barcode_clean_txt_files]
+            failed_samples = [sample_name for sample_name in sample_names if sample_name not in finished_samples]
+            log.logit(f"Failed samples: {failed_samples}", color="red")
+            log.logit(err_msg, color="red")
+            sys.exit(f"[err] {err_msg}")
+        log.logit(f"Cleaning barcodes complete. Moving on to the next step...", color="green")
+        update_checkpoint('clean_barcodes')
+    else:
+        log.logit(f"Clean Barcodes already completed. Skipping to the next step...", color="green")
 
     # sgID QC
-    log.logit(f"Summarizing sgID information for all samples...", color="green")
-    sgid_qc_out_dir = out_dir + "/sgIDQCOutFiles"
-    sgid_qc_out_dir = tools.ensure_abs_path(sgid_qc_out_dir)
-    with mp.Pool(threads) as p:
-        # results = p.starmap(summarize.sgID_info, [
-        #     (merge_reads_csv, sample_name, sgID_dict, str(sgid_qc_out_dir), debug) for merge_reads_csv, sample_name in merge_reads_csv_files
-        # ])
-        results = parallel_process_with_timeout(
-            pool=p,
-            func=summarize.sgID_info,
-            args_list=[
-                (merge_reads_csv, sample_name, sgID_dict, str(sgid_qc_out_dir), debug) for merge_reads_csv, sample_name in merge_reads_csv_files
-            ],
-            timeout=1800
-        )
-    success = [res[0] for res in results]
-    sgID_qc_df_sample_name = [[res[1], res[2]] for res in results]
-    if not all(success):
-        err_msg = f"ERROR: Some processes failed. Check the logs for more details. Exiting."
-        log.logit(err_msg, color="red")
-        sys.exit(f"[err] {err_msg}")
+    if not checkpoints.get('sgID_qc', False):
+        log.logit(f"Summarizing sgID information for all samples...", color="green")
+        sgid_qc_out_dir = out_dir + "/sgIDQCOutFiles"
+        sgid_qc_out_dir = tools.ensure_abs_path(sgid_qc_out_dir)
+        with mp.Pool(threads) as p:
+            # results = p.starmap(summarize.sgID_info, [
+            #     (merge_reads_csv, sample_name, sgID_dict, str(sgid_qc_out_dir), debug) for merge_reads_csv, sample_name in merge_reads_csv_files
+            # ])
+            results = parallel_process_with_timeout(
+                pool=p,
+                func=summarize.sgID_info,
+                args_list=[
+                    (merge_reads_csv, sample_name, sgID_dict, str(sgid_qc_out_dir), debug) for merge_reads_csv, sample_name in merge_reads_csv_files
+                ],
+                timeout=1800
+            )
+        success = [res[0] for res in results]
+        sgID_qc_df_sample_name = [[res[1], res[2]] for res in results]
+        if not all(success):
+            err_msg = f"ERROR: Some processes failed. Check the logs for more details. Exiting."
+            log.logit(err_msg, color="red")
+            sys.exit(f"[err] {err_msg}")
+        else:
+            # Initialize empty DataFrames for combined results using the first result
+            combined_total_reads = sgID_qc_df_sample_name[0][0]['sgID']
+            combined_num_barcodes = sgID_qc_df_sample_name[0][0]['sgID']
+            combined_rel_reads = sgID_qc_df_sample_name[0][0]['sgID']
+            combined_rel_barcodes = sgID_qc_df_sample_name[0][0]['sgID']
+
+            # Merge each result DataFrame into the combined DataFrames
+            for sgID_qc_df, sample_name in sgID_qc_df_sample_name:
+                combined_total_reads = pd.merge(combined_total_reads, sgID_qc_df[['sgID', 'total_reads']].rename(columns={'total_reads': f'{sample_name}'}), on='sgID', how='outer').fillna(0)
+                combined_num_barcodes = pd.merge(combined_num_barcodes, sgID_qc_df[['sgID', 'num_barcodes']].rename(columns={'num_barcodes': f'{sample_name}'}), on='sgID', how='outer').fillna(0)
+                combined_rel_reads = pd.merge(combined_rel_reads, sgID_qc_df[['sgID', 'rel_reads']].rename(columns={'rel_reads': f'{sample_name}'}), on='sgID', how='outer').fillna(0)
+                combined_rel_barcodes = pd.merge(combined_rel_barcodes, sgID_qc_df[['sgID', 'rel_barcodes']].rename(columns={'rel_barcodes': f'{sample_name}'}), on='sgID', how='outer').fillna(0)
+
+            log.logit(f"Results written to {out_dir}")
+            # Save each combined DataFrame to a separate CSV file
+            combined_total_reads.to_csv(os.path.join(out_dir, "total_reads_per_sgid.csv"), index=False)
+            combined_num_barcodes.to_csv(os.path.join(out_dir, "barcodes_per_sgid.csv"), index=False)
+            combined_rel_reads.to_csv(os.path.join(out_dir, "relative_reads_per_sgid.csv"), index=False)
+            combined_rel_barcodes.to_csv(os.path.join(out_dir, "relative_barcodes_per_sgid.csv"), index=False)
+
+            # Plot the results
+            plotting.per_sgid(combined_total_reads, combined_num_barcodes, combined_rel_reads, combined_rel_barcodes, out_dir, True, debug)
+        log.logit(f"Summarizing sgID information complete. Moving on to the next step...", color="green")
+        update_checkpoint('sgID_qc')
     else:
-        # Initialize empty DataFrames for combined results using the first result
-        combined_total_reads = sgID_qc_df_sample_name[0][0]['sgID']
-        combined_num_barcodes = sgID_qc_df_sample_name[0][0]['sgID']
-        combined_rel_reads = sgID_qc_df_sample_name[0][0]['sgID']
-        combined_rel_barcodes = sgID_qc_df_sample_name[0][0]['sgID']
-
-        # Merge each result DataFrame into the combined DataFrames
-        for sgID_qc_df, sample_name in sgID_qc_df_sample_name:
-            combined_total_reads = pd.merge(combined_total_reads, sgID_qc_df[['sgID', 'total_reads']].rename(columns={'total_reads': f'{sample_name}'}), on='sgID', how='outer').fillna(0)
-            combined_num_barcodes = pd.merge(combined_num_barcodes, sgID_qc_df[['sgID', 'num_barcodes']].rename(columns={'num_barcodes': f'{sample_name}'}), on='sgID', how='outer').fillna(0)
-            combined_rel_reads = pd.merge(combined_rel_reads, sgID_qc_df[['sgID', 'rel_reads']].rename(columns={'rel_reads': f'{sample_name}'}), on='sgID', how='outer').fillna(0)
-            combined_rel_barcodes = pd.merge(combined_rel_barcodes, sgID_qc_df[['sgID', 'rel_barcodes']].rename(columns={'rel_barcodes': f'{sample_name}'}), on='sgID', how='outer').fillna(0)
-
-        log.logit(f"Results written to {out_dir}")
-        # Save each combined DataFrame to a separate CSV file
-        combined_total_reads.to_csv(os.path.join(out_dir, "total_reads_per_sgid.csv"), index=False)
-        combined_num_barcodes.to_csv(os.path.join(out_dir, "barcodes_per_sgid.csv"), index=False)
-        combined_rel_reads.to_csv(os.path.join(out_dir, "relative_reads_per_sgid.csv"), index=False)
-        combined_rel_barcodes.to_csv(os.path.join(out_dir, "relative_barcodes_per_sgid.csv"), index=False)
-
-        # Plot the results
-        plotting.per_sgid(combined_total_reads, combined_num_barcodes, combined_rel_reads, combined_rel_barcodes, out_dir, True, debug)
-    log.logit(f"Summarizing sgID information complete. Moving on to the next step...", color="green")
+        log.logit(f"sgID QC already completed. Skipping to the next step...", color="green")
 
     # Mapped Reads
-    log.logit(f"Summarizing mapped reads for all samples...", color="green")
-    with mp.Pool(threads) as p:
-        # results = p.starmap(summarize.get_total_reads, [
-        #     (merge_read_csv, sgID_dict) for merge_read_csv, _ in merge_reads_csv_files
-        # ])
-        results = parallel_process_with_timeout(
-            pool=p,
-            func=summarize.get_total_reads,
-            args_list=[
-                (merge_read_csv, sgID_dict) for merge_read_csv, _ in merge_reads_csv_files
-            ],
-            timeout=1800
+    if not checkpoints.get('mapped_reads', False):
+        log.logit(f"Summarizing mapped reads for all samples...", color="green")
+        with mp.Pool(threads) as p:
+            # results = p.starmap(summarize.get_total_reads, [
+            #     (merge_read_csv, sgID_dict) for merge_read_csv, _ in merge_reads_csv_files
+            # ])
+            results = parallel_process_with_timeout(
+                pool=p,
+                func=summarize.get_total_reads,
+                args_list=[
+                    (merge_read_csv, sgID_dict) for merge_read_csv, _ in merge_reads_csv_files
+                ],
+                timeout=1800
+            )
+        total_reads = np.array([res[0] for res in results])
+        unmapped_reads = np.array([res[1] for res in results])
+        total_reads_safe = np.where(total_reads == 0, 1, total_reads)     # Avoid division by zero by setting total_reads to 1 where it is 0
+        mapped_percentages = ((total_reads - unmapped_reads) / total_reads_safe) * 100
+        unmapped_percentages = (unmapped_reads / total_reads_safe) * 100
+        # Set percentages to 0 where total_reads was originally 0
+        mapped_percentages[total_reads == 0] = 0
+        unmapped_percentages[total_reads == 0] = 0
+
+        mapped_percentages = mapped_percentages.tolist()
+        unmapped_percentages = unmapped_percentages.tolist()
+
+        log.logit(f"Results written to {out_dir}/mapped_percentages.csv")
+        mapped_df = pd.DataFrame(
+            {
+                "Sample": sample_names,
+                "Mapped %": mapped_percentages,
+                "Unmapped %": unmapped_percentages,
+            }
         )
-    total_reads = np.array([res[0] for res in results])
-    unmapped_reads = np.array([res[1] for res in results])
-    total_reads_safe = np.where(total_reads == 0, 1, total_reads)     # Avoid division by zero by setting total_reads to 1 where it is 0
-    mapped_percentages = ((total_reads - unmapped_reads) / total_reads_safe) * 100
-    unmapped_percentages = (unmapped_reads / total_reads_safe) * 100
-    # Set percentages to 0 where total_reads was originally 0
-    mapped_percentages[total_reads == 0] = 0
-    unmapped_percentages[total_reads == 0] = 0
+        mapped_df.to_csv(f"{out_dir}/mapped_percentages.csv", index=False)
 
-    mapped_percentages = mapped_percentages.tolist()
-    unmapped_percentages = unmapped_percentages.tolist()
-
-    log.logit(f"Results written to {out_dir}/mapped_percentages.csv")
-    mapped_df = pd.DataFrame(
-        {
-            "Sample": sample_names,
-            "Mapped %": mapped_percentages,
-            "Unmapped %": unmapped_percentages,
-        }
-    )
-    mapped_df.to_csv(f"{out_dir}/mapped_percentages.csv", index=False)
-
-    # Plot the results
-    plotting.mapped_reads(mapped_df, out_dir, debug)
-    log.logit(f"Summarizing mapped reads complete. Moving on to the next step...", color="green")
+        # Plot the results
+        plotting.mapped_reads(mapped_df, out_dir, debug)
+        log.logit(f"Summarizing mapped reads complete. Moving on to the next step...", color="green")
+        update_checkpoint('mapped_reads')
+    else:
+        log.logit(f"Mapped Reads already completed. Skipping to the next step...", color="green")
 
     # Cell Counts
-    log.logit(f"Calculating cell counts for all samples...", color="green")
-    barcode_clean_txt_files = tools.get_list_of_files(clean_barcodes_out_dir, "barcode_clean_txt", debug)
-    cell_number_out_dir = out_dir + "/CellCountOutFiles"
-    cell_number_out_dir = tools.ensure_abs_path(cell_number_out_dir)
-    with mp.Pool(threads) as p:
-        # results = p.starmap(rawdata.cell_number, [
-        #     (barcode_clean_txt, sample_name, spike_ins, library_info, str(cell_number_out_dir), plot, debug)
-        #     for barcode_clean_txt, sample_name in barcode_clean_txt_files
-        # ])
-        results = parallel_process_with_timeout(
-            pool=p,
-            func=rawdata.cell_number,
-            args_list=[
-                (barcode_clean_txt, sample_name, spike_ins, library_info, str(cell_number_out_dir), plot, debug)
-                for barcode_clean_txt, sample_name in barcode_clean_txt_files
-            ],
-            timeout=1800
-        )
-    success = [res[0] for res in results]
-    dfs = [res[1] for res in results]
-    filtered_dfs = [res[2] for res in results]
-    spike_counts_dfs = [res[3] for res in results]
-    figures = [res[4] for res in results]
-    if not all(success):
-        err_msg = f"ERROR: Some processes during Cell-Number Task failed. Check the logs for more details. Exiting."
-        cell_count_files = tools.get_list_of_files(cell_number_out_dir, "cell_count", debug)
-        finished_samples = [sample_name for _, sample_name in cell_count_files]
-        failed_samples = [sample_name for sample_name in sample_names if sample_name not in finished_samples]
-        log.logit(f"Failed samples: {failed_samples}", color="red")
-        log.logit(err_msg, color="red")
-        sys.exit(f"[err] {err_msg}")
+    if not checkpoints.get('cell_counts', False):
+        log.logit(f"Calculating cell counts for all samples...", color="green")
+        barcode_clean_txt_files = tools.get_list_of_files(clean_barcodes_out_dir, "barcode_clean_txt", debug)
+        cell_number_out_dir = out_dir + "/CellCountOutFiles"
+        cell_number_out_dir = tools.ensure_abs_path(cell_number_out_dir)
+        with mp.Pool(threads) as p:
+            # results = p.starmap(rawdata.cell_number, [
+            #     (barcode_clean_txt, sample_name, spike_ins, library_info, str(cell_number_out_dir), plot, debug)
+            #     for barcode_clean_txt, sample_name in barcode_clean_txt_files
+            # ])
+            results = parallel_process_with_timeout(
+                pool=p,
+                func=rawdata.cell_number,
+                args_list=[
+                    (barcode_clean_txt, sample_name, spike_ins, library_info, str(cell_number_out_dir), plot, debug)
+                    for barcode_clean_txt, sample_name in barcode_clean_txt_files
+                ],
+                timeout=1800
+            )
+        success = [res[0] for res in results]
+        dfs = [res[1] for res in results]
+        filtered_dfs = [res[2] for res in results]
+        spike_counts_dfs = [res[3] for res in results]
+        figures = [res[4] for res in results]
+        if not all(success):
+            err_msg = f"ERROR: Some processes during Cell-Number Task failed. Check the logs for more details. Exiting."
+            cell_count_files = tools.get_list_of_files(cell_number_out_dir, "cell_count", debug)
+            finished_samples = [sample_name for _, sample_name in cell_count_files]
+            failed_samples = [sample_name for sample_name in sample_names if sample_name not in finished_samples]
+            log.logit(f"Failed samples: {failed_samples}", color="red")
+            log.logit(err_msg, color="red")
+            sys.exit(f"[err] {err_msg}")
+        else:
+            log.logit(f"Cell Number Calculations Complete. Combining results...", color="green")
+            # Initialize empty DataFrames for combined results using the first result
+            combined_df = pd.concat(dfs, ignore_index=True)
+            combined_filtered_df = pd.concat(filtered_dfs, ignore_index=True)
+            combined_spike_counts = pd.concat(spike_counts_dfs, ignore_index=True)
+            
+            # Get the unique Sample_ID and Spike_Rsq values from combined_df
+            unique_samples = combined_df['Sample_Rsq'].unique()
+            split_samples = [x.split('_') for x in unique_samples]
+            Rsq = pd.DataFrame(split_samples, columns=['Sample_ID', 'Spike_Rsq'])
+            Rsq['Spike_Rsq'] = pd.to_numeric(Rsq['Spike_Rsq'])
+            if debug: print(Rsq)
+            if plot: plotting.rsq_per_sample(Rsq, out_dir)
+            
+            # Select columns and get unique combinations
+            unique_df = combined_df[['reading_depth', 'Sample_ID']].drop_duplicates().reset_index(drop=True)
+            if debug: print(unique_df)
+            if plot: plotting.reading_depth_per_sample(unique_df, out_dir)
+            
+            aggr_df = (combined_df.groupby('Sample_ID')
+            .agg({'reading_depth': 'mean', 'Spike_Rsq': 'mean'})
+            .rename(columns={'reading_depth': 'mean_ReadingDepth', 
+                            'Spike_Rsq': 'mean_Rsq'})
+            .reset_index())
+            aggr_df['cellsPerRead'] = 1/aggr_df['mean_ReadingDepth']
+            if plot: plotting.mean_rsq_distribution(aggr_df, out_dir)
+            if plot: plotting.mean_reading_depth_distribution(aggr_df, out_dir)
+            
+            log.logit(f"Results written to {out_dir}")
+            if plot: plotting.all_spike_ins(figures, project_name, out_dir)
+            Rsq.to_csv(f"{out_dir}/" + project_name + "_" + "RsqPerSample.csv", index=False)
+            unique_df.to_csv(f"{out_dir}/" + project_name + "_" + "ReadingDepthPerSample.csv", index=False)
+            aggr_df.to_csv(f"{out_dir}/" + project_name + "_" + "CountInfoPerSample.csv", index=False)
+            combined_df.to_csv(f"{out_dir}/" + project_name + "_" + "UnfilteredSampleInfo.csv", index=False)
+            combined_filtered_df.to_csv(f"{out_dir}/" + project_name + "_" + "FilteredSampleInfo.csv", index=False)
+            combined_spike_counts.to_csv(f"{out_dir}/" + project_name + "_" + "SpikeInInfo.csv", index=False)
+        log.logit(f"Calculating cell counts complete.", color="green")
+        update_checkpoint('cell_counts')
     else:
-        log.logit(f"Cell Number Calculations Complete. Combining results...", color="green")
-        # Initialize empty DataFrames for combined results using the first result
-        combined_df = pd.concat(dfs, ignore_index=True)
-        combined_filtered_df = pd.concat(filtered_dfs, ignore_index=True)
-        combined_spike_counts = pd.concat(spike_counts_dfs, ignore_index=True)
-        
-        # Get the unique Sample_ID and Spike_Rsq values from combined_df
-        unique_samples = combined_df['Sample_Rsq'].unique()
-        split_samples = [x.split('_') for x in unique_samples]
-        Rsq = pd.DataFrame(split_samples, columns=['Sample_ID', 'Spike_Rsq'])
-        Rsq['Spike_Rsq'] = pd.to_numeric(Rsq['Spike_Rsq'])
-        if debug: print(Rsq)
-        if plot: plotting.rsq_per_sample(Rsq, out_dir)
-        
-        # Select columns and get unique combinations
-        unique_df = combined_df[['reading_depth', 'Sample_ID']].drop_duplicates().reset_index(drop=True)
-        if debug: print(unique_df)
-        if plot: plotting.reading_depth_per_sample(unique_df, out_dir)
-        
-        aggr_df = (combined_df.groupby('Sample_ID')
-           .agg({'reading_depth': 'mean', 'Spike_Rsq': 'mean'})
-           .rename(columns={'reading_depth': 'mean_ReadingDepth', 
-                          'Spike_Rsq': 'mean_Rsq'})
-           .reset_index())
-        aggr_df['cellsPerRead'] = 1/aggr_df['mean_ReadingDepth']
-        if plot: plotting.mean_rsq_distribution(aggr_df, out_dir)
-        if plot: plotting.mean_reading_depth_distribution(aggr_df, out_dir)
-        
-        log.logit(f"Results written to {out_dir}")
-        if plot: plotting.all_spike_ins(figures, project_name, out_dir)
-        Rsq.to_csv(f"{out_dir}/" + project_name + "_" + "RsqPerSample.csv", index=False)
-        unique_df.to_csv(f"{out_dir}/" + project_name + "_" + "ReadingDepthPerSample.csv", index=False)
-        aggr_df.to_csv(f"{out_dir}/" + project_name + "_" + "CountInfoPerSample.csv", index=False)
-        combined_df.to_csv(f"{out_dir}/" + project_name + "_" + "UnfilteredSampleInfo.csv", index=False)
-        combined_filtered_df.to_csv(f"{out_dir}/" + project_name + "_" + "FilteredSampleInfo.csv", index=False)
-        combined_spike_counts.to_csv(f"{out_dir}/" + project_name + "_" + "SpikeInInfo.csv", index=False)
-    log.logit(f"Calculating cell counts complete.", color="green")
+        log.logit(f"Cell Counts already completed. Skipping to the next step...", color="green")
+    
+    # Remove checkpoint file
+    os.remove(checkpoint_file)
         
