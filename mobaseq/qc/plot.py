@@ -66,14 +66,22 @@ def spike_ins(spike_count, slope, rsq, plot_color, sample_name, out_dir, redraw 
     ax.scatter(spike_count['count'], spike_count['expected_cellnum'], color=plot_color)
     # Regression line
     x = spike_count['count']
-    y_pred = slope * x
-    ax.plot(x, y_pred, color=plot_color)
+    if len(x) == 1:
+        # For single point, create line from origin through point
+        x_line = np.array([0, x.iloc[0]])  # Two points: origin and data point
+        y_line = slope * x_line
+        ax.plot(x_line, y_line, color=plot_color)
+    else:
+        # Multiple points - use original regression
+        y_pred = slope * x
+        ax.plot(x, y_pred, color=plot_color)
     
     # Add labels with z-scores
     texts = []
     for _, row in spike_count.iterrows():
         texts.append(ax.text(row['count'], row['expected_cellnum'], 
-                           f"{row['name']} (z={row['z_scores']:.2f})"))
+                           f"{row['name']} (z={row['z_scores']:.2f} | res={row['residuals']:.2f})"
+                           ))
     
     # Adjust text positions to avoid overlap
     adjust_text(texts)

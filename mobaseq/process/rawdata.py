@@ -362,21 +362,30 @@ def cell_number(barcode_clean_txt, sample_name, spike_ins, library_info, out_dir
                 Sample_ID=sample_name,
                 expected_cellnum=lambda x: x['expected'] * spike_num
             )
+            # We need to remove any SpikeIns that have less than 10 counts because this can be noise
+            spike_count = spike_count[spike_count['count'] >= 10]
+
+            # Default Figure
+            figure = None
+
             if len(spike_count) > 1: # If there is more than one spike-in, calculate the slope and R² value
+                log.logit(f"Calculating the slope and R² value for the spike-ins...")
                 spike_count, slope, rsq = get_slope_and_rsq(spike_count)
                 if debug: 
                     log.logit(f"SciKit-Learn Linear Regression Model: {slope}, {rsq}")
                     print(spike_count[['Sample_ID', 'count', 'name', 'expected_cellnum', 'z_scores']])
                 if plot: figure = plotting.spike_ins(spike_count, slope, rsq, "red" if rsq < 0.9 else "black", sample_name, out_dir)
-                # If the R² value is less than 0.9, remove the Spike-in with the highest z-score
+                # If the R² value is less than 0.9, remove the Spike-in with the highest residual
                 if rsq < 0.9:
-                    log.logit(f"The R² value is {rsq}, trying to remove the Spike-in with the highest z-score...")
-                    max_abs_zscore = np.abs(spike_count['z_scores']).max()
-                    spike_count_redo = spike_count[np.abs(spike_count['z_scores']) != max_abs_zscore]
+                    log.logit(f"The R² value is {rsq}, trying to remove the Spike-in with the highest residual...")
+                    #max_abs_zscore = np.abs(spike_count['z_scores']).max()
+                    #spike_count_redo = spike_count[np.abs(spike_count['z_scores']) != max_abs_zscore]
+                    max_abs_residual = np.abs(spike_count['residuals']).max()
+                    spike_count_redo = spike_count[np.abs(spike_count['residuals']) != max_abs_residual]
                     spike_count_redo, slope_redo, rsq_redo = get_slope_and_rsq(spike_count_redo)
                     if debug: 
                         log.logit(f"SciKit-Learn Linear Regression Model: {slope_redo}, {rsq_redo}")
-                        print(spike_count_redo[['Sample_ID', 'count', 'name', 'expected_cellnum', 'z_scores']])
+                        print(spike_count_redo[['Sample_ID', 'count', 'name', 'expected_cellnum', 'residuals', 'z_scores']])
                     if plot: figure = plotting.spike_ins(spike_count_redo, slope_redo, rsq_redo, "red" if rsq < 0.9 else "black", sample_name, out_dir, True)
                     if rsq_redo > rsq:
                         spike_count = spike_count_redo
@@ -385,7 +394,15 @@ def cell_number(barcode_clean_txt, sample_name, spike_ins, library_info, out_dir
                 spike_count.to_csv(out_dir + "/" + sample_name + "_SpikeInCounts.txt", index=False, sep='\t', na_rep = 'NA')
                 log.logit(f"The highest R² value is {rsq}.")
             elif len(spike_count) == 1: # Calculate slope directly from the ratio when only one point is available
+                log.logit(f"Only one spike-in found. Calculating the slope from the ratio of the expected cell number to the count.")
                 slope = float(spike_count['expected_cellnum'].values / spike_count['count'].values)
+                rsq = 1
+                spike_count['z_scores'] = 0
+                spike_count['residuals'] = 0
+                if debug: 
+                    print(f"{slope}, {rsq}")
+                    print(spike_count[['Sample_ID', 'count', 'name', 'expected_cellnum', 'residuals', 'z_scores']])
+                if plot: figure = plotting.spike_ins(spike_count, slope, rsq, "red" if rsq < 0.9 else "black", sample_name, out_dir)
             if len(spike_count) != 0:
                 log.logit(f"Using the slope of {slope} to calculate the cell numbers.")
                 df = df.assign(
