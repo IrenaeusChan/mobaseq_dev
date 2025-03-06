@@ -458,10 +458,10 @@ def run_pipeline(input_dir, sgid_file, spike_ins, library_info, plot, project_na
     library_info = pd.read_excel(library_info)
 
     # Count Reads
+    count_reads_out_dir = out_dir + "/MergeReadOutFiles"
+    count_reads_out_dir = tools.ensure_abs_path(count_reads_out_dir)
     if not checkpoints.get('count_reads', False):    
         log.logit(f"Counting reads for all samples...", color="green")
-        count_reads_out_dir = out_dir + "/MergeReadOutFiles"
-        count_reads_out_dir = tools.ensure_abs_path(count_reads_out_dir)
         with mp.Pool(threads) as p:
             # success = p.starmap(rawdata.countreads, [
             #     (fastq1, fastq2, sample_name, sgID_dict, min_length, max_length, all_start_with_G, str(count_reads_out_dir), debug)
@@ -490,11 +490,11 @@ def run_pipeline(input_dir, sgid_file, spike_ins, library_info, plot, project_na
         log.logit(f"Count Reads already completed. Skipping to the next step...", color="green")
 
     # Clean Barcodes
+    log.logit(f"Cleaning barcodes for all samples...", color="green")
+    merge_reads_csv_files = tools.get_list_of_files(count_reads_out_dir, "merge_reads_csv", debug)
+    clean_barcodes_out_dir = out_dir + "/BarcodeCleanOutFiles"
+    clean_barcodes_out_dir = tools.ensure_abs_path(clean_barcodes_out_dir)
     if not checkpoints.get('clean_barcodes', False):
-        log.logit(f"Cleaning barcodes for all samples...", color="green")
-        merge_reads_csv_files = tools.get_list_of_files(count_reads_out_dir, "merge_reads_csv", debug)
-        clean_barcodes_out_dir = out_dir + "/BarcodeCleanOutFiles"
-        clean_barcodes_out_dir = tools.ensure_abs_path(clean_barcodes_out_dir)
         with mp.Pool(threads) as p:
             # success = p.starmap(rawdata.clean_barcodes, [
             #     (merge_read_csv, sample_name, 1, str(clean_barcodes_out_dir), debug) for merge_read_csv, sample_name in merge_reads_csv_files
@@ -521,10 +521,10 @@ def run_pipeline(input_dir, sgid_file, spike_ins, library_info, plot, project_na
         log.logit(f"Clean Barcodes already completed. Skipping to the next step...", color="green")
 
     # sgID QC
+    sgid_qc_out_dir = out_dir + "/sgIDQCOutFiles"
+    sgid_qc_out_dir = tools.ensure_abs_path(sgid_qc_out_dir)
     if not checkpoints.get('sgID_qc', False):
         log.logit(f"Summarizing sgID information for all samples...", color="green")
-        sgid_qc_out_dir = out_dir + "/sgIDQCOutFiles"
-        sgid_qc_out_dir = tools.ensure_abs_path(sgid_qc_out_dir)
         with mp.Pool(threads) as p:
             # results = p.starmap(summarize.sgID_info, [
             #     (merge_reads_csv, sample_name, sgID_dict, str(sgid_qc_out_dir), debug) for merge_reads_csv, sample_name in merge_reads_csv_files
@@ -569,6 +569,7 @@ def run_pipeline(input_dir, sgid_file, spike_ins, library_info, plot, project_na
         log.logit(f"Summarizing sgID information complete. Moving on to the next step...", color="green")
         update_checkpoint('sgID_qc')
     else:
+        sgid_qc_out_dir = out_dir + "/sgIDQCOutFiles"
         log.logit(f"sgID QC already completed. Skipping to the next step...", color="green")
 
     # Mapped Reads
@@ -616,11 +617,11 @@ def run_pipeline(input_dir, sgid_file, spike_ins, library_info, plot, project_na
         log.logit(f"Mapped Reads already completed. Skipping to the next step...", color="green")
 
     # Cell Counts
+    barcode_clean_txt_files = tools.get_list_of_files(clean_barcodes_out_dir, "barcode_clean_txt", debug)
+    cell_number_out_dir = out_dir + "/CellCountOutFiles"
+    cell_number_out_dir = tools.ensure_abs_path(cell_number_out_dir)
     if not checkpoints.get('cell_counts', False):
         log.logit(f"Calculating cell counts for all samples...", color="green")
-        barcode_clean_txt_files = tools.get_list_of_files(clean_barcodes_out_dir, "barcode_clean_txt", debug)
-        cell_number_out_dir = out_dir + "/CellCountOutFiles"
-        cell_number_out_dir = tools.ensure_abs_path(cell_number_out_dir)
         with mp.Pool(threads) as p:
             # results = p.starmap(rawdata.cell_number, [
             #     (barcode_clean_txt, sample_name, spike_ins, library_info, str(cell_number_out_dir), plot, debug)

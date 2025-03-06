@@ -20,6 +20,8 @@ python3 -m pip install -e .
 
 ```bash
 mobaseq --help
+
+mobaseq run -i rawFastq/ -if input_files/ --plot -o output_new_outlier -t 4
 ```
 
 Definitions:
