@@ -298,6 +298,36 @@ def cell_num_metrics(df, spike_ins):
     df['log2_cell_num'] = np.log2(df['cell_num'])
     df['rel_cell_num'] = df.groupby('Sample_ID')['cell_num'].transform(lambda x: x / x.sum())
     return df
+
+def round_to_next_power(x, base=10):
+    """Round to next power of base (default 10)"""
+    power = np.ceil(np.log10(x))
+    return base ** power
+
+def calculate_relative_spike_in_counts(spike_count, spike_ins, spike_num):
+    # Calculate the relative spike-in counts
+    # If all 8 Spike-ins are present, calculate the relative count
+    if len(spike_count) == len(spike_ins):
+        spike_count = spike_count.assign(
+            rel_count=lambda x: x['count'] / x['count'].sum()
+        )
+    # If not all 8 Spike-ins are present, calculate the relative count based on the expected cell number
+    else:
+        average_total_raw_count = (spike_count['count'] / spike_count['expected']).mean()
+        missing_spike_ins = spike_ins[~spike_ins['name'].isin(spike_count['name'])][['name', 'sequence', 'expected']]
+        missing_spike_ins = missing_spike_ins.assign(
+            sgID='sgDummy',
+            distance='NA',
+            barcode='NA',
+            count=lambda x: x['expected'] * average_total_raw_count,
+            Sample_ID=spike_count['Sample_ID'].iloc[0],
+            expected_cellnum=lambda x: x['expected'] * spike_num,
+        )
+        spike_count = pd.concat([spike_count, missing_spike_ins], ignore_index=True)
+        spike_count = spike_count.assign(
+            rel_count=lambda x: x['count'] / x['count'].sum()
+        )
+    return spike_count
     
 def get_slope_and_rsq(spike_count):
     log.logit(f"Calculating the slope and R² value for the spike-ins...")
@@ -364,6 +394,8 @@ def cell_number(barcode_clean_txt, sample_name, spike_ins, library_info, out_dir
             )
             # We need to remove any SpikeIns that have less than 10 counts because this can be noise
             spike_count = spike_count[spike_count['count'] >= 10]
+            spike_count = calculate_relative_spike_in_counts(spike_count, spike_ins, spike_num)
+            spike_count = remove_outlier_spike_ins(spike_count)
 
             # Default Figure
             figure = None
@@ -373,7 +405,7 @@ def cell_number(barcode_clean_txt, sample_name, spike_ins, library_info, out_dir
                 spike_count, slope, rsq = get_slope_and_rsq(spike_count)
                 if debug: 
                     log.logit(f"SciKit-Learn Linear Regression Model: {slope}, {rsq}")
-                    print(spike_count[['Sample_ID', 'count', 'name', 'expected_cellnum', 'z_scores']])
+                    print(spike_count[['Sample_ID', 'count', 'name', 'expected_cellnum', 'residuals', 'z_scores']])
                 if plot: figure = plotting.spike_ins(spike_count, slope, rsq, "red" if rsq < 0.9 else "black", sample_name, out_dir)
                 # If the R² value is less than 0.9, remove the Spike-in with the highest residual
                 if rsq < 0.9:
