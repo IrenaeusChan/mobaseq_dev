@@ -316,7 +316,7 @@ def calculate_relative_spike_in_counts(spike_count, spike_ins, spike_num):
         average_total_raw_count = (spike_count['count'] / spike_count['expected']).mean()
         missing_spike_ins = spike_ins[~spike_ins['name'].isin(spike_count['name'])][['name', 'sequence', 'expected']]
         missing_spike_ins = missing_spike_ins.assign(
-            sgID='sgDummy',
+            sgID='sgSpikeIn',
             distance='NA',
             barcode='NA',
             count=lambda x: x['expected'] * average_total_raw_count,
@@ -328,7 +328,26 @@ def calculate_relative_spike_in_counts(spike_count, spike_ins, spike_num):
             rel_count=lambda x: x['count'] / x['count'].sum()
         )
     return spike_count
-    
+
+def remove_outlier_spike_ins(spike_count):
+    # Dictionary of what is considered an outlier
+    outlier_dict = {
+        '4-5B2': (0.148, 0.298),
+        '1-4A7': (0.116, 0.239),
+        '2-4E6': (0.124, 0.196),
+        '7-5H8': (0.109, 0.192),
+        '5-5C6': (0.120, 0.226),
+        '6-5F2': (0.067, 0.127),
+        '3-4G6': (0.030, 0.073),
+        '8-5B8': (0.005, 0.040)
+    }
+    # If the relative counts for each spike in is outside the range, remove it
+    for name, (lower, upper) in outlier_dict.items():
+        spike_count = spike_count[~((spike_count['name'] == name) & ((spike_count['rel_count'] < lower) | (spike_count['rel_count'] > upper)))]
+    # Remove Spike-Ins with sgID 'sgSpikeIn'
+    spike_count = spike_count[spike_count['sgID'] != 'sgSpikeIn']
+    return spike_count
+
 def get_slope_and_rsq(spike_count):
     log.logit(f"Calculating the slope and R² value for the spike-ins...")
     # Prepare data
@@ -396,7 +415,6 @@ def cell_number(barcode_clean_txt, sample_name, spike_ins, library_info, out_dir
             spike_count = spike_count[spike_count['count'] >= 10]
             spike_count = calculate_relative_spike_in_counts(spike_count, spike_ins, spike_num)
             spike_count = remove_outlier_spike_ins(spike_count)
-
             # Default Figure
             figure = None
 
